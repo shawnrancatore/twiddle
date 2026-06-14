@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "twiddle"
+version = "0.1.0"
+description = "Reliable service + CLI for ATORCH USB/DC BLE testers (UD18-class)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "bench" }]
+keywords = ["atorch", "ud18", "ble", "bluetooth", "usb-tester", "power-meter"]
+dependencies = ["bleak>=0.21"]
+
+[project.scripts]
+twiddle = "twiddle.cli:main"
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

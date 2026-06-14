@@ -1,0 +1,34 @@
+# twiddle configuration (TOML). Copy to one of:
+#   ./twiddle.toml
+#   ~/.config/twiddle/config.toml
+#   /etc/twiddle/config.toml
+# or point $TWIDDLE_CONFIG at it. All values below are optional; omitted
+# values fall back to the built-in defaults shown here.
+
+[service]
+# Unix socket the service listens on and the CLI talks to.
+# For a system-wide systemd service use "/run/twiddle/twiddle.sock".
+socket = "/run/twiddle/twiddle.sock"
+# Optional read-only HTTP/JSON endpoint on localhost (omit to disable).
+# http_port = 8787
+log_level = "INFO"
+
+[ble]
+connect_timeout = 8.0     # seconds per connect attempt (includes the scan)
+reconnect_delay = 2.0     # seconds to wait between reconnect attempts
+stale_timeout   = 12.0    # reconnect if no frame arrives for this long
+command_timeout = 8.0     # seconds to wait for a command (e.g. reset) to write
+clear_cache_after = 6     # run `bluetoothctl remove <mac>` every N failures (0=never)
+
+# --- Devices -------------------------------------------------------------
+# Give each tester a friendly name. The two ATORCH units are interchangeable
+# twins, so this DEE/DUM <-> MAC mapping is just a starting guess — run
+# `twiddle scan` and swap the MACs if the names land on the wrong unit.
+
+[devices.twdlDEE]
+mac  = "78:5F:2D:C4:0C:BD"
+note = "servo / PWM power bus"
+
+[devices.twdlDUM]
+mac  = "D9:9B:58:F4:F1:0B"
+note = "logic / Pi rail"

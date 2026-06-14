@@ -1,0 +1,26 @@
+[Unit]
+Description=twiddle — ATORCH BLE tester service
+Documentation=https://github.com/your/twiddle
+After=bluetooth.target
+Wants=bluetooth.target
+
+[Service]
+Type=simple
+# Adjust to your install. Using a venv:
+#   ExecStart=/opt/twiddle/.venv/bin/twiddle service
+ExecStart=/usr/local/bin/twiddle service
+Environment=TWIDDLE_CONFIG=/etc/twiddle/config.toml
+# Socket lives under /run/twiddle (matches config.example.toml).
+RuntimeDirectory=twiddle
+RuntimeDirectoryMode=0755
+Restart=always
+RestartSec=3
+# Hardening (relax if it interferes with your BlueZ setup).
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/run/twiddle
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
