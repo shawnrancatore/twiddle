@@ -9,3 +9,6 @@ venv/
 twiddle.toml
 *.sock
 *.log
+
+# Stray / unrelated examples (not part of twiddle)
+examples/
