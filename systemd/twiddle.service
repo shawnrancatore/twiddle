@@ -1,6 +1,6 @@
 [Unit]
 Description=twiddle — ATORCH BLE tester service
-Documentation=https://github.com/your/twiddle
+Documentation=https://github.com/shawnrancatore/twiddle
 After=bluetooth.target
 Wants=bluetooth.target
 

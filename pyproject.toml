@@ -9,9 +9,14 @@ description = "Reliable service + CLI for ATORCH USB/DC BLE testers (UD18-class)
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "bench" }]
+authors = [{ name = "rancatron" }]
 keywords = ["atorch", "ud18", "ble", "bluetooth", "usb-tester", "power-meter"]
 dependencies = ["bleak>=0.21"]
+
+[project.urls]
+Homepage = "https://github.com/shawnrancatore/twiddle"
+Repository = "https://github.com/shawnrancatore/twiddle"
+Issues = "https://github.com/shawnrancatore/twiddle/issues"
 
 [project.scripts]
 twiddle = "twiddle.cli:main"

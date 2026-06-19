@@ -85,7 +85,13 @@ def cmd_list(cfg, args) -> int:
         resp = {"ok": True, "devices": devs}
     if args.json:
         print(json.dumps(resp, indent=2)); return 0 if resp.get("ok") else 1
-    for name, st in resp.get("devices", {}).items():
+    devices = resp.get("devices", {})
+    if not devices:
+        print("no devices configured. Run `twiddle scan` to find your meters, "
+              "then add them to a config file (see config.example.toml).",
+              file=sys.stderr)
+        return 0
+    for name, st in devices.items():
         _print_reading(name, st)
     return 0
 

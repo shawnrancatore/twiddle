@@ -5,7 +5,8 @@ Config is TOML (read with the stdlib `tomllib`, Python >=3.11). Search order:
   2. ./twiddle.toml
   3. ~/.config/twiddle/config.toml
   4. /etc/twiddle/config.toml
-If no file is found, built-in defaults are used (with the two bench devices).
+If no file is found, built-in defaults are used and no devices are configured
+(run `twiddle scan`, then add your meters to a config — see config.example.toml).
 """
 from __future__ import annotations
 
@@ -19,12 +20,10 @@ DEFAULT_SOCKET = os.environ.get(
     os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "twiddle.sock"),
 )
 
-# Bench defaults. The two ATORCH testers are interchangeable twins, so the
-# DEE/DUM name<->MAC mapping below is a starting guess — swap freely in config.
-DEFAULT_DEVICES = {
-    "twdlDEE": {"mac": "78:5F:2D:C4:0C:BD", "note": "servo / PWM power bus"},
-    "twdlDUM": {"mac": "D9:9B:58:F4:F1:0B", "note": "logic / Pi rail"},
-}
+# No devices are baked in: a fresh install has nothing to connect to until you
+# add your own meters to a config file. See config.example.toml for the format
+# and `twiddle scan` to discover MACs.
+DEFAULT_DEVICES: dict[str, dict[str, str]] = {}
 
 
 @dataclass

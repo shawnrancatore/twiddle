@@ -11,9 +11,9 @@ IPC protocol (Unix socket, one JSON object per line, one response per line):
   <- {"ok": true, "service": "twiddle", "version": "...", "devices": [...]}
   -> {"cmd": "list"}
   <- {"ok": true, "devices": {name: <status>, ...}}
-  -> {"cmd": "get", "device": "twdlDEE"}
+  -> {"cmd": "get", "device": "<name>"}
   <- {"ok": true, "status": <status>}
-  -> {"cmd": "reset", "device": "twdlDEE", "counter": "all"}
+  -> {"cmd": "reset", "device": "<name>", "counter": "all"}
   <- {"ok": true}
 On error: {"ok": false, "error": "..."}.
 """
