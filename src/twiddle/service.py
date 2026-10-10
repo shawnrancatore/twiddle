@@ -97,6 +97,8 @@ class Service:
             try:
                 await m.reset(req.get("counter", "all"))
                 return {"ok": True}
+            except TimeoutError as e:  # already says that nothing was sent
+                return {"ok": False, "error": str(e)}
             except Exception as e:
                 return {"ok": False, "error": f"{type(e).__name__}: {e}"}
         return {"ok": False, "error": f"unknown cmd {cmd!r}"}

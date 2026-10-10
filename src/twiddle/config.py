@@ -29,7 +29,7 @@ DEFAULT_DEVICES: dict[str, dict[str, str]] = {}
 
 @dataclass
 class BleTuning:
-    connect_timeout: float = 8.0     # per connect attempt (incl. scan)
+    connect_timeout: float = 8.0     # seconds for the scan, and again for the connection
     reconnect_delay: float = 2.0     # wait between reconnect attempts
     stale_timeout: float = 12.0      # reconnect if no frame for this long
     command_timeout: float = 8.0     # wait for a command write to complete

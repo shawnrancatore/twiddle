@@ -162,6 +162,8 @@ class DeviceManager:
                 frame, fut = await asyncio.wait_for(self._cmd_q.get(), timeout=1.0)
             except asyncio.TimeoutError:
                 continue
+            if fut.done():
+                continue  # the caller gave up; never write it later
             try:
                 await client.write_gatt_char(P.CHAR_UUID, frame, response=False)
                 if not fut.done():
@@ -169,6 +171,15 @@ class DeviceManager:
             except Exception as e:
                 if not fut.done():
                     fut.set_exception(e)
+        # nothing queued on this connection may be written on the next one
+        self._fail_pending()
+
+    def _fail_pending(self) -> None:
+        while not self._cmd_q.empty():
+            _frame, fut = self._cmd_q.get_nowait()
+            if not fut.done():
+                fut.set_exception(ConnectionError(
+                    f"{self.name} disconnected before the command was sent"))
 
     def _on_notify(self, _char, data: bytearray) -> None:
         self._buf.extend(data)
@@ -185,7 +196,15 @@ class DeviceManager:
             raise RuntimeError(f"{self.name} is not connected")
         fut: asyncio.Future = asyncio.get_running_loop().create_future()
         await self._cmd_q.put((frame, fut))
-        await asyncio.wait_for(fut, timeout=self.ble.command_timeout)
+        try:
+            await asyncio.wait_for(fut, timeout=self.ble.command_timeout)
+        except asyncio.TimeoutError:
+            fut.cancel()
+            raise TimeoutError(f"reset was not sent: {self.name} did not accept it "
+                               f"within {self.ble.command_timeout:g}s") from None
+        except asyncio.CancelledError:
+            fut.cancel()
+            raise
 
     async def reset(self, counter: str = "all") -> None:
         await self.send_command(reset_frame(self.device_type, counter))
@@ -193,6 +212,7 @@ class DeviceManager:
     def stop(self) -> None:
         self._stop = True
         self._disconnected.set()
+        self._fail_pending()
 
 
 # -- one-shot helpers (used by the CLI when no service is running) --------

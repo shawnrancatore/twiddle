@@ -147,7 +147,7 @@ and has no meters. [config.example.toml](config.example.toml) lists every settin
 | `[service] http_port` | off | port for the read-only HTTP endpoint on 127.0.0.1 |
 | `[service] http_cors_origin` | none | one web origin whose pages may read the HTTP endpoint; not `*` or `null` |
 | `[service] log_level` | `INFO` | service log level |
-| `[ble] connect_timeout` | `8.0` | seconds per connect attempt, scan included |
+| `[ble] connect_timeout` | `8.0` | seconds for the scan, and again for the connection, on each attempt |
 | `[ble] reconnect_delay` | `2.0` | seconds between reconnect attempts |
 | `[ble] stale_timeout` | `12.0` | reconnect after this many seconds without a frame |
 | `[ble] command_timeout` | `8.0` | seconds the service waits for a reset to be written |
@@ -192,7 +192,7 @@ Clear 'all' counter(s) on meter-b (AA:BB:CC:DD:EE:02)? This is irreversible. [y/
 With the service running, the request goes over the socket with `"confirm": true`. Without it, the
 CLI connects to the meter directly. Either way, the command carries the meter's own type (USB, DC
 or AC), read from its last report frame with a valid checksum. Until the meter has sent one,
-nothing is sent.
+nothing is sent. A reset that fails or times out is dropped, not retried later.
 
 ## The socket
 

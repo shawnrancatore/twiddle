@@ -208,5 +208,79 @@ class TestServiceReset(unittest.TestCase):
         self.assertEqual(m.sent, [])
 
 
+class GatedClient(FakeClient):
+    """A connection whose first write waits until the test lets it go."""
+
+    def __init__(self):
+        super().__init__([])
+        self.gate = asyncio.Event()
+        self.first = True
+
+    async def write_gatt_char(self, _char, data, response=False):
+        if self.first:
+            self.first = False
+            await self.gate.wait()
+        self.writes.append(bytes(data))
+
+
+def connected_manager(**tuning):
+    m = C.DeviceManager("meter-a", "AA:BB:CC:DD:EE:01",
+                        BleTuning(command_timeout=0.1, **tuning))
+    m.connected = True
+    m.last_frame_ts = 1e12  # the stream never looks stale
+    return m
+
+
+class TestQueuedCommands(unittest.TestCase):
+    def test_timed_out_command_is_never_written(self):
+        async def go():
+            m, client = connected_manager(), GatedClient()
+            serve = asyncio.create_task(m._serve(client))
+            first = asyncio.get_running_loop().create_future()
+            m._cmd_q.put_nowait((b"first", first))
+            await asyncio.sleep(0.01)  # the writer is now blocked on `first`
+            with self.assertRaises(TimeoutError) as cm:
+                await m.send_command(b"late")
+            self.assertIn("reset was not sent", str(cm.exception))
+            client.gate.set()
+            await first
+            await asyncio.sleep(0.1)
+            m.stop()
+            await serve
+            return client.writes
+        self.assertEqual(asyncio.run(go()), [b"first"])
+
+    def test_commands_queued_before_a_disconnect_are_failed(self):
+        async def go():
+            m = connected_manager()
+            pending = asyncio.create_task(m.send_command(b"old"))
+            await asyncio.sleep(0.01)
+            m._disconnected.set()
+            await m._serve(FakeClient([]))  # the connection is gone
+            with self.assertRaises(ConnectionError) as cm:
+                await pending
+            self.assertIn("meter-a disconnected before the command was sent",
+                          str(cm.exception))
+            # reconnected: the old command must not be written
+            m._disconnected.clear()
+            again = FakeClient([])
+            serve = asyncio.create_task(m._serve(again))
+            await asyncio.sleep(1.2)
+            m.stop()
+            await serve
+            return again.writes
+        self.assertEqual(asyncio.run(go()), [])
+
+    def test_normal_command_writes_one_frame(self):
+        async def go():
+            m, client = connected_manager(), FakeClient([])
+            serve = asyncio.create_task(m._serve(client))
+            await m.send_command(b"one")
+            m.stop()
+            await serve
+            return client.writes
+        self.assertEqual(asyncio.run(go()), [b"one"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
