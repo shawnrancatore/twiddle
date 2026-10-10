@@ -52,6 +52,14 @@ reports. Multi-byte values are **big-endian unsigned**.
 | temperature | 0x18 | 2 | °C |
 | hour / min / sec | 0x1A / 0x1C / 0x1D | 2 / 1 / 1 | runtime |
 
+No capacity (A·h) field is documented for DC meters, so twiddle reports
+`capacity_ah` as `null` for them. Power is sent in the frame, not computed.
+
+### Report frame — AC meter (`devType 0x01`)
+
+No AC report layout is documented here. The codec reads AC frames with the DC
+offsets above; no AC meter has been tested.
+
 ### Command frame (host → meter)
 
 `FF 55 11 <devType> <code> <value:4 BE> <checksum>`

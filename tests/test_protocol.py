@@ -9,8 +9,11 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.dirname(__file__))
 
 from twiddle import protocol as P  # noqa: E402
+
+import frames  # noqa: E402
 
 # A real frame captured from a USB meter (device type 0x03):
 #   7.72 V, 0.82 A, 5.568 Ah, 33.07 Wh, D-/D+ 2.68/2.70 V, runtime 8h45m59s
@@ -47,6 +50,43 @@ class TestDecode(unittest.TestCase):
 
     def test_non_report_returns_none(self):
         self.assertIsNone(P.decode_report(b"\x00" * 36))
+
+
+class TestDecodeDC(unittest.TestCase):
+    """A synthetic DC frame (devType 0x02) built from PROTOCOL.md's offsets."""
+
+    FRAME = frames.report(frames.DEV_DC, {
+        0x04: (3, 123),    # voltage   ÷10   -> 12.3 V
+        0x07: (3, 1234),   # current   ÷1000 -> 1.234 A
+        0x0A: (3, 151),    # power     ÷10   -> 15.1 W
+        0x0D: (4, 4567),   # energy    ÷100  -> 45.67 W·h
+        0x11: (3, 250),    # price     ÷100  (not decoded)
+        0x18: (2, 31),     # temperature     -> 31 °C
+        0x1A: (2, 2),      # hours
+        0x1C: (1, 3),      # minutes
+        0x1D: (1, 4),      # seconds         -> 2h03m04s
+    })
+
+    def test_decode_dc(self):
+        r = P.decode_report(self.FRAME)
+        self.assertEqual(r.device_type, "DC")
+        self.assertAlmostEqual(r.voltage, 12.3, places=3)
+        self.assertAlmostEqual(r.current, 1.234, places=3)       # /1000, not /100
+        self.assertAlmostEqual(r.energy_wh, 45.67, places=2)
+        self.assertEqual(r.temperature_c, 31)
+        self.assertEqual(r.runtime_s, 2 * 3600 + 3 * 60 + 4)
+        self.assertTrue(r.checksum_ok)
+
+    def test_dc_power_comes_from_the_frame(self):
+        r = P.decode_report(self.FRAME)
+        self.assertAlmostEqual(r.power, 15.1, places=3)          # not 12.3 * 1.234
+
+    def test_dc_has_no_charge_or_usb_fields(self):
+        # PROTOCOL.md documents no capacity (A·h) field for DC meters
+        r = P.decode_report(self.FRAME)
+        self.assertIsNone(r.capacity_ah)
+        self.assertIsNone(r.usb_dminus)
+        self.assertIsNone(r.usb_dplus)
 
 
 class TestFraming(unittest.TestCase):

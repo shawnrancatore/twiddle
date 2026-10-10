@@ -95,17 +95,26 @@ curl -s http://127.0.0.1:8787/device/meter-a
 
 ## Reading fields
 
-| field | meaning | unit |
-|---|---|---|
-| `voltage` | bus voltage | V |
-| `current` | bus current | A |
-| `power` | power (computed if not sent) | W |
-| `capacity_ah` | accumulated charge | A·h |
-| `energy_wh` | accumulated energy | W·h |
-| `usb_dplus`/`usb_dminus` | USB data-line voltages (USB meters) | V |
-| `temperature_c` | meter temperature | °C |
-| `runtime_s` | accumulated runtime | s |
-| `checksum_ok` | frame checksum validated | bool |
+Which fields a reading carries depends on the meter type in its frame.
+`null` means that type's frame does not carry the field.
+
+| field | meaning | unit | USB meter | DC meter |
+|---|---|---|---|---|
+| `device_type` | meter type from the frame | | `USB` | `DC` |
+| `voltage` | bus voltage | V | yes | yes |
+| `current` | bus current | A | yes | yes |
+| `power` | power | W | computed, V × I | from the frame |
+| `capacity_ah` | accumulated charge | A·h | yes | `null` |
+| `energy_wh` | accumulated energy | W·h | yes | yes |
+| `usb_dplus`, `usb_dminus` | USB data-line voltages | V | yes | `null` |
+| `temperature_c` | meter temperature | °C | yes | yes |
+| `runtime_s` | accumulated runtime | s | yes | yes |
+| `checksum_ok` | frame checksum matched | bool | yes | yes |
+| `raw` | the whole frame, as hex | | yes | yes |
+
+An AC meter reports `device_type` `AC`, and twiddle reads its frame with the DC
+layout. That layout is not documented for AC meters, and no AC meter has been
+tested.
 
 ## Resetting counters
 
