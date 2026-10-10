@@ -92,6 +92,23 @@ def _origin(value) -> str | None:
     return value
 
 
+def _table(value, where: str, msg: str = "") -> dict:
+    if not isinstance(value, dict):
+        raise ValueError(f"{where}: {msg or 'must be a table'}")
+    return value
+
+
+def _typed(table: dict, key: str, kind: type, default, what: str, label: str = "service"):
+    """table[key] if it is a `kind` (a bool is never a number), else `default`."""
+    if key not in table:
+        return default
+    value = table[key]
+    if isinstance(value, bool) or not isinstance(value, kind if kind is not float
+                                                  else (int, float)):
+        raise ValueError(f"{label}: {key} must be {what}")
+    return value
+
+
 def load(explicit: str | None = None) -> Config:
     path = find_config_path(explicit)
     raw: dict = {}
@@ -102,19 +119,26 @@ def load(explicit: str | None = None) -> Config:
     cfg = Config()
     cfg.source = path or "<defaults>"
 
-    svc = raw.get("service", {})
-    cfg.socket = svc.get("socket", cfg.socket)
-    cfg.http_port = svc.get("http_port", cfg.http_port)
+    svc = _table(raw.get("service", {}), "service")
+    cfg.socket = _typed(svc, "socket", str, cfg.socket, "text")
+    cfg.http_port = _typed(svc, "http_port", int, cfg.http_port, "a whole number")
     cfg.http_cors_origin = _origin(svc.get("http_cors_origin"))
-    cfg.log_level = svc.get("log_level", cfg.log_level)
+    cfg.log_level = _typed(svc, "log_level", str, cfg.log_level, "text")
 
-    ble = raw.get("ble", {})
-    for f_ in BleTuning().__dataclass_fields__:
+    ble = _table(raw.get("ble", {}), "ble")
+    for f_, default in vars(BleTuning()).items():
         if f_ in ble:
-            setattr(cfg.ble, f_, ble[f_])
+            kind, what = (int, "a whole number") if isinstance(default, int) \
+                else (float, "a number")
+            setattr(cfg.ble, f_, _typed(ble, f_, kind, default, what, label="ble"))
 
-    devices = raw.get("devices") or DEFAULT_DEVICES
+    devices = _table(raw.get("devices") or DEFAULT_DEVICES, "devices")
     for name, spec in devices.items():
-        cfg.devices[name] = Device(name=name, mac=str(spec["mac"]).upper(),
-                                   note=spec.get("note", ""))
+        spec = _table(spec, f"devices.{name}", "must be a table")
+        if "mac" not in spec:
+            raise ValueError(f"devices.{name}: mac is missing")
+        mac = _typed(spec, "mac", str, None, "text", label=f"devices.{name}")
+        cfg.devices[name] = Device(
+            name=name, mac=mac.upper(),
+            note=_typed(spec, "note", str, "", "text", label=f"devices.{name}"))
     return cfg

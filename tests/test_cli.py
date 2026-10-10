@@ -114,6 +114,24 @@ class TestBadConfig(CliCase):
                 self.assertEqual(rc, 2)
                 self.assertIn("http_cors_origin", err)
 
+    def test_malformed_config_is_one_line_not_a_traceback(self):
+        cases = {
+            "missing mac": ("[devices.meter-a]\nnote = 'x'\n", "devices.meter-a: mac is missing"),
+            "device not a table": ("[devices]\nmeter-a = 'AA:BB:CC:DD:EE:01'\n",
+                                   "devices.meter-a: must be a table"),
+            "http_port wrong type": ("[service]\nhttp_port = 'abc'\n", "http_port"),
+            "mac wrong type": ("[devices.meter-a]\nmac = 5\n", "devices.meter-a: mac must be text"),
+        }
+        for label, (text, expect) in cases.items():
+            with self.subTest(label):
+                with open(self.config, "w") as fh:
+                    fh.write(text)
+                rc, _, err = self.run_cli("config")
+                self.assertEqual(rc, 2)
+                self.assertEqual(len(err.strip().splitlines()), 1, err)
+                self.assertTrue(err.startswith("error: config: "), err)
+                self.assertIn(expect, err)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
