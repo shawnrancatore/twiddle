@@ -25,9 +25,9 @@ class SocketDenied(Exception):
 def _ipc(cfg, req: dict, timeout: float = 12.0) -> dict | None:
     """Send one request to the service; return response, or None if no service.
 
-    A socket this user may not open means a service is running, so that
-    raises SocketDenied instead of returning None: falling back to a direct
-    connection would fight the service for the meter.
+    A socket this user may not open most likely belongs to a running service,
+    so that raises SocketDenied instead of returning None: falling back to a
+    direct connection would fight that service for the meter.
     """
     try:
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -35,8 +35,8 @@ def _ipc(cfg, req: dict, timeout: float = 12.0) -> dict | None:
         s.connect(cfg.socket)
     except PermissionError:
         raise SocketDenied(
-            f"permission denied on {cfg.socket}: a service is running, and the "
-            f"socket's owner and group decide who may use it")
+            f"permission denied on {cfg.socket}; the socket's owner and group "
+            f"decide who may use it")
     except (FileNotFoundError, ConnectionRefusedError, OSError):
         return None
     try:
