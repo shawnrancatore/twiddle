@@ -88,10 +88,13 @@ it without a meter:
 
 ```python
 from twiddle import protocol as P
-r = P.decode_report(frame_bytes)         # -> Reading | None
-P.verify_checksum(frame_bytes)           # -> bool
-P.build_reset("all", P.DEV_USB)          # -> bytes ff 55 11 03 05 00 00 00 00 5d
+r = P.decode_report(frame_bytes)             # -> Reading | None
+P.verify_checksum(frame_bytes)               # -> bool
+P.build_reset("all", device_type=P.DEV_USB)  # -> bytes ff 55 11 03 05 00 00 00 00 5d
 ```
+
+`device_type` has no default: pass the meter's own type, from its report
+frames.
 
 The meters use service `0000ffe0-…` and characteristic `0000ffe1-…` (notify and
 write). Once you subscribe, a meter sends a report frame about once a second;

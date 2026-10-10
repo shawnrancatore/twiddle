@@ -146,14 +146,19 @@ def decode_report(frame: bytes) -> Reading | None:
     return r
 
 
-def build_command(code: int, device_type: int = DEV_USB, value: int = 0) -> bytes:
-    """Build a command frame: FF 55 11 <devtype> <code> <value:4 BE> <cksum>."""
+def build_command(code: int, *, device_type: int, value: int = 0) -> bytes:
+    """Build a command frame: FF 55 11 <devtype> <code> <value:4 BE> <cksum>.
+
+    `device_type` has no default: it must be the target meter's own type
+    (DEV_AC, DEV_DC or DEV_USB), as its report frames give it.
+    """
     body = bytes([MSG_COMMAND, device_type & 0xFF, code & 0xFF]) + value.to_bytes(4, "big")
     return MAGIC + body + bytes([checksum(body)])
 
 
-def build_reset(counter: str = "all", device_type: int = DEV_USB) -> bytes:
-    """Build a reset command. `counter` in {'all','wh','ah','duration'}."""
+def build_reset(counter: str = "all", *, device_type: int) -> bytes:
+    """Build a reset command for a meter of `device_type` (required).
+    `counter` in {'all','wh','ah','duration'}."""
     key = counter.lower()
     if key not in RESET_CODES:
         raise ValueError(f"unknown counter {counter!r}; choose from {sorted(RESET_CODES)}")

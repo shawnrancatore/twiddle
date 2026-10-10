@@ -108,23 +108,35 @@ class TestFraming(unittest.TestCase):
 class TestCommands(unittest.TestCase):
     def test_reset_all_usb(self):
         # documented frame for USB device type 0x03
-        self.assertEqual(P.build_reset("all", P.DEV_USB).hex(), "ff5511030500000000" + "5d")
+        self.assertEqual(P.build_reset("all", device_type=P.DEV_USB).hex(), "ff5511030500000000" + "5d")
 
     def test_reset_all_generic(self):
         # documented example from NiceLabs/atorch-console uses device type 0x01
-        self.assertEqual(P.build_reset("all", P.DEV_AC).hex(), "ff5511010500000000" + "53")
+        self.assertEqual(P.build_reset("all", device_type=P.DEV_AC).hex(), "ff5511010500000000" + "53")
 
     def test_reset_codes(self):
-        self.assertEqual(P.build_reset("wh", P.DEV_USB)[4], 0x01)
-        self.assertEqual(P.build_reset("ah", P.DEV_USB)[4], 0x02)
-        self.assertEqual(P.build_reset("duration", P.DEV_USB)[4], 0x03)
+        self.assertEqual(P.build_reset("wh", device_type=P.DEV_USB)[4], 0x01)
+        self.assertEqual(P.build_reset("ah", device_type=P.DEV_USB)[4], 0x02)
+        self.assertEqual(P.build_reset("duration", device_type=P.DEV_USB)[4], 0x03)
 
     def test_bad_counter(self):
         with self.assertRaises(ValueError):
-            P.build_reset("nope")
+            P.build_reset("nope", device_type=P.DEV_USB)
+
+    def test_device_type_is_a_required_keyword(self):
+        # no default type: a reset with the wrong type is the bug this prevents
+        for call in (lambda: P.build_reset(),
+                     lambda: P.build_reset("all"),
+                     lambda: P.build_reset("all", P.DEV_DC),
+                     lambda: P.build_command(0x05),
+                     lambda: P.build_command(0x05, P.DEV_DC)):
+            with self.assertRaises(TypeError):
+                call()
+        self.assertEqual(P.build_command(0x05, device_type=P.DEV_DC),
+                         P.build_reset(device_type=P.DEV_DC))
 
     def test_command_checksum_roundtrips(self):
-        frame = P.build_reset("all", P.DEV_USB)
+        frame = P.build_reset("all", device_type=P.DEV_USB)
         self.assertEqual(P.checksum(frame[2:-1]), frame[-1])
 
 
@@ -153,12 +165,12 @@ class TestResetBytes(unittest.TestCase):
     def test_documented_bytes(self):
         for (dev, counter), expected in self.EXPECTED.items():
             with self.subTest(dev=dev, counter=counter):
-                self.assertEqual(P.build_reset(counter, dev), bytes.fromhex(expected))
+                self.assertEqual(P.build_reset(counter, device_type=dev), bytes.fromhex(expected))
 
     def test_checksum_is_documented_formula(self):
         for (dev, counter) in self.EXPECTED:
             with self.subTest(dev=dev, counter=counter):
-                frame = P.build_reset(counter, dev)
+                frame = P.build_reset(counter, device_type=dev)
                 self.assertEqual(frame[-1], (sum(frame[2:-1]) & 0xFF) ^ 0x44)
                 self.assertTrue(P.verify_checksum(frame))
 
