@@ -90,15 +90,19 @@ The meters' Bluetooth module takes one connection at a time and drops it often. 
 the service, holds that connection for each meter. It connects the meters one after another,
 because scans running in parallel collide in BlueZ, and then keeps them all connected. It decodes
 the report frame (a 36-byte packet) that each meter sends about once a second, and keeps the
-latest. When a connection fails or goes quiet, it reconnects. By default, after every 6 failures
-in a row it clears BlueZ's cached state for that meter with `bluetoothctl remove`. The `twiddle`
-command asks the service over its socket. With no service running, `get` and `reset` connect to
-the meter directly, once. The frame layout and the reset commands are in [docs/PROTOCOL.md](docs/PROTOCOL.md).
+latest.
+
+When a connection fails or goes quiet, the service reconnects. By default, after every 6 failures
+in a row it clears BlueZ's cached state for that meter with `bluetoothctl remove`.
+
+The `twiddle` command asks the service over its socket. With no service running, `get` and
+`reset` connect to the meter directly, once. The frame layout and the reset commands are in
+[docs/PROTOCOL.md](docs/PROTOCOL.md).
 
 ## What it deliberately does not do
 
-- **Linux with BlueZ only.** It names meters by MAC address, serves a Unix socket, and
-  calls `bluetoothctl`.
+- **Linux with BlueZ only.** It finds meters by MAC address, serves a Unix socket, and calls
+  `bluetoothctl`.
 - **No pairing and no authentication.** The meters accept commands with no pairing or keys. While
   Twiddle is not connected to a meter, any device in Bluetooth range can connect to it, read it,
   or clear its counters. Twiddle adds no login of its own.
@@ -111,9 +115,9 @@ the meter directly, once. The frame layout and the reset commands are in [docs/P
 - **No HTTP unless you set `http_port`.** Then it listens on 127.0.0.1 only, answers `GET` only,
   and cannot reset anything. It has no authentication, so any program on the machine can read it.
   It sends no CORS header (the header that lets pages from another site read an answer) unless
-  you name one origin, such as `http://localhost:3000`, in `http_cors_origin`. It also refuses requests whose `Host` is not
-  `127.0.0.1` or `localhost`, so a web page cannot get round this by pointing its own host name at
-  127.0.0.1.
+  you name one origin, such as `http://localhost:3000`, in `http_cors_origin`. It also refuses
+  requests whose `Host` is not `127.0.0.1` or `localhost`, so a web page cannot get round this by
+  pointing its own host name at 127.0.0.1.
 
 ## Commands
 
@@ -171,7 +175,9 @@ frame does not carry the field.
 | `raw` | the whole frame, as hex | | yes | yes |
 
 An AC meter reports `device_type` `AC`, and Twiddle reads its frame with the DC layout. That
-layout is not documented for AC meters, and no AC meter has been tested.
+layout is not documented for AC meters, and no AC meter has been tested. DC, like AC, has been
+tested only with synthetic frames, not a real meter, and the DC and AC reset commands have not
+been tried on hardware.
 
 ## Resetting counters
 
@@ -230,8 +236,10 @@ curl -s http://127.0.0.1:8731/device/meter-a
    sudo cp systemd/twiddle.service /etc/systemd/system/
    ```
 
-2. Put your meters in `/etc/twiddle/config.toml`. In `/etc/systemd/system/twiddle.service`, set
-   `ExecStart` to your `twiddle`, for example `/opt/twiddle/.venv/bin/twiddle service`.
+2. Put your meters in `/etc/twiddle/config.toml`, and uncomment its
+   `socket = "/run/twiddle/twiddle.sock"` line, so the CLI and the unit agree on the socket. In
+   `/etc/systemd/system/twiddle.service`, set `ExecStart` to your `twiddle`, for example
+   `/opt/twiddle/.venv/bin/twiddle service`.
 3. Start it and read its log:
 
    ```sh
@@ -243,7 +251,11 @@ curl -s http://127.0.0.1:8731/device/meter-a
 The unit puts the socket at `/run/twiddle/twiddle.sock`. As shipped, it runs as root, so the
 socket belongs to user and group `root`, and other users get `permission denied`. To let members
 of the `bluetooth` group use it, uncomment `User=` and `Group=bluetooth` in the unit, and set
-`User=` to an account that may use BlueZ. Then point the CLI at the socket:
+`User=` to an account that may use BlueZ.
+
+`twiddle list` then reaches the service through the config's `socket` line, as long as
+`/etc/twiddle/config.toml` is the first config the CLI finds (see [Configuration](#configuration)).
+Otherwise, name the socket:
 
 ```sh
 twiddle --socket /run/twiddle/twiddle.sock list
