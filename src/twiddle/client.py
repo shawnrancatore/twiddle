@@ -27,19 +27,19 @@ from . import protocol as P
 log = logging.getLogger("twiddle.client")
 
 
-def reset_frame(reading: P.Reading | None, counter: str) -> bytes:
-    """The reset command for the meter that sent `reading`.
+def reset_frame(device_type: str | None, counter: str) -> bytes:
+    """The reset command for a meter whose report frames say `device_type`.
 
     A command frame carries a device type, and it must be the meter's own, so
-    it comes from the meter's last report frame. With no frame yet, or a
-    device type the protocol does not list, nothing is sent.
+    it comes from the meter's last report frame with a valid checksum. With no
+    such frame, or a device type the protocol does not list, nothing is sent.
     """
-    if reading is None:
-        raise RuntimeError("no report frame from this meter yet, so its type is "
-                           "unknown; try again once it is reporting")
-    dev_type = P.DEV_CODES.get(reading.device_type)
+    if device_type is None:
+        raise RuntimeError("no report frame with a valid checksum from this meter "
+                           "yet, so its type is unknown; try again once it is reporting")
+    dev_type = P.DEV_CODES.get(device_type)
     if dev_type is None:
-        raise RuntimeError(f"meter reports unknown device type {reading.device_type}; "
+        raise RuntimeError(f"meter reports unknown device type {device_type}; "
                            f"not sending a reset")
     return P.build_reset(counter, device_type=dev_type)
 
@@ -73,6 +73,9 @@ class DeviceManager:
         self._connect_lock = connect_lock or asyncio.Lock()
         self.connected = False
         self.last_reading: P.Reading | None = None
+        # device type from the last frame whose checksum matched; a reset
+        # uses this, never the type of a frame that may be corrupt
+        self.device_type: str | None = None
         self.last_frame_ts: float = 0.0
         self.connect_count = 0
         self.fail_streak = 0
@@ -174,6 +177,8 @@ class DeviceManager:
             if reading is not None:
                 self.last_reading = reading
                 self.last_frame_ts = time.time()
+                if reading.checksum_ok:
+                    self.device_type = reading.device_type
 
     async def send_command(self, frame: bytes) -> None:
         if not self.connected:
@@ -183,7 +188,7 @@ class DeviceManager:
         await asyncio.wait_for(fut, timeout=self.ble.command_timeout)
 
     async def reset(self, counter: str = "all") -> None:
-        await self.send_command(reset_frame(self.last_reading, counter))
+        await self.send_command(reset_frame(self.device_type, counter))
 
     def stop(self) -> None:
         self._stop = True
@@ -212,8 +217,9 @@ async def _connect_retry(mac: str, ble, attempts: int):
     raise last or TimeoutError("connect failed")
 
 
-async def _first_reading(client, settle: float) -> P.Reading:
-    """Subscribe and wait up to `settle` seconds for a decoded report frame."""
+async def _first_reading(client, settle: float, valid_only: bool = False) -> P.Reading:
+    """Subscribe and wait up to `settle` seconds for a decoded report frame;
+    with `valid_only`, for one whose checksum matches."""
     buf = bytearray()
     result: list[P.Reading] = []
 
@@ -221,7 +227,7 @@ async def _first_reading(client, settle: float) -> P.Reading:
         buf.extend(data)
         for fr in P.find_frames(buf):
             r = P.decode_report(fr)
-            if r:
+            if r and (r.checksum_ok or not valid_only):
                 result.append(r)
 
     await client.start_notify(P.CHAR_UUID, cb)
@@ -229,7 +235,8 @@ async def _first_reading(client, settle: float) -> P.Reading:
     while not result and asyncio.get_running_loop().time() < deadline:
         await asyncio.sleep(0.2)
     if not result:
-        raise TimeoutError("connected but no report frame received")
+        what = "report frame with a valid checksum" if valid_only else "report frame"
+        raise TimeoutError(f"connected but no {what} received")
     return result[-1]
 
 
@@ -246,15 +253,16 @@ async def read_once(mac: str, ble, attempts: int = 20, settle: float = 6.0) -> P
 
 async def reset_once(mac: str, counter: str, ble, attempts: int = 20,
                      settle: float = 6.0) -> str:
-    """Connect, read one report frame to learn the meter's device type, write
-    the reset for that type, disconnect. Returns the device type ("USB", "DC"
-    or "AC"). For CLI use without a running service."""
+    """Connect, read report frames until one has a valid checksum, write the
+    reset for that frame's device type, disconnect. Returns the device type
+    ("USB", "DC" or "AC"). For CLI use without a running service."""
     if counter.lower() not in P.RESET_CODES:
         raise ValueError(f"unknown counter {counter!r}; choose from {sorted(P.RESET_CODES)}")
     client = await _connect_retry(mac, ble, attempts)
     try:
-        reading = await _first_reading(client, settle)
-        await client.write_gatt_char(P.CHAR_UUID, reset_frame(reading, counter),
+        reading = await _first_reading(client, settle, valid_only=True)
+        await client.write_gatt_char(P.CHAR_UUID,
+                                     reset_frame(reading.device_type, counter),
                                      response=False)
         await asyncio.sleep(0.3)
         return reading.device_type

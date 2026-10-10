@@ -24,6 +24,11 @@ USB_FRAME = bytes.fromhex(
 DC_FRAME = frames.report(frames.DEV_DC)
 AC_FRAME = frames.report(frames.DEV_AC)
 ODD_FRAME = frames.report(0x07)  # a device type PROTOCOL.md does not list
+# A DC frame whose devType byte flipped to USB in transit: it decodes as USB,
+# but its checksum no longer matches.
+CORRUPT = bytearray(DC_FRAME)
+CORRUPT[3] = frames.DEV_USB
+CORRUPT = bytes(CORRUPT)
 
 RESET_ALL = {
     "USB": bytes.fromhex("ff 55 11 03 05 00 00 00 00 5d"),
@@ -117,6 +122,24 @@ class TestOneShotReset(unittest.TestCase):
         self.assertEqual(fake.writes, [])
         self.assertTrue(fake.disconnected)
 
+    def test_corrupt_frames_are_skipped(self):
+        fake = run_one_shot([CORRUPT, DC_FRAME, CORRUPT])
+        self.assertEqual(fake.writes, [RESET_ALL["DC"]])
+
+    def test_only_corrupt_frames_sends_nothing(self):
+        fake = FakeClient([CORRUPT, CORRUPT])
+
+        async def connect(_mac, _ble, _attempts):
+            return fake
+
+        with mock.patch.object(C, "_connect_retry", connect):
+            with self.assertRaises(TimeoutError) as ctx:
+                asyncio.run(C.reset_once("AA:BB:CC:DD:EE:01", "all", BleTuning(),
+                                         settle=0.2))
+        self.assertIn("valid checksum", str(ctx.exception))
+        self.assertEqual(fake.writes, [])
+        self.assertTrue(fake.disconnected)
+
     def test_bad_counter_never_connects(self):
         async def connect(*_a):
             raise AssertionError("connected for a bad counter")
@@ -127,10 +150,12 @@ class TestOneShotReset(unittest.TestCase):
 
 
 class TestServiceReset(unittest.TestCase):
-    def manager(self, frame):
+    def manager(self, *notifications):
+        """A connected manager that has received these notifications."""
         m = C.DeviceManager("meter-a", "AA:BB:CC:DD:EE:01", BleTuning())
         m.connected = True
-        m.last_reading = P.decode_report(frame) if frame else None
+        for data in notifications:
+            m._on_notify(None, bytearray(data))
         m.sent = []
 
         async def capture(cmd):
@@ -155,10 +180,25 @@ class TestServiceReset(unittest.TestCase):
         self.assertEqual(m.sent, [RESET_ALL["AC"]])
 
     def test_no_frame_yet_refuses(self):
-        m = self.manager(None)
+        m = self.manager()
         with self.assertRaises(RuntimeError) as ctx:
             asyncio.run(m.reset("all"))
         self.assertIn("no report frame", str(ctx.exception))
+        self.assertEqual(m.sent, [])
+
+    def test_corrupt_frame_does_not_change_the_type(self):
+        self.assertFalse(P.verify_checksum(CORRUPT))
+        self.assertEqual(P.decode_report(CORRUPT).device_type, "USB")
+        m = self.manager(DC_FRAME, CORRUPT)
+        self.assertFalse(m.last_reading.checksum_ok)  # still shown, flagged
+        asyncio.run(m.reset("all"))
+        self.assertEqual(m.sent, [RESET_ALL["DC"]])
+
+    def test_only_corrupt_frames_refuses(self):
+        m = self.manager(CORRUPT)
+        with self.assertRaises(RuntimeError) as ctx:
+            asyncio.run(m.reset("all"))
+        self.assertIn("valid checksum", str(ctx.exception))
         self.assertEqual(m.sent, [])
 
     def test_unknown_device_type_refuses(self):

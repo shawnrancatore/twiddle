@@ -185,7 +185,8 @@ Clear 'all' counter(s) on meter-b (AA:BB:CC:DD:EE:02)? This is irreversible. [y/
 
 With the service running, the request goes over the socket with `"confirm": true`. Without it, the
 CLI connects to the meter directly. Either way, the command carries the meter's own type (USB, DC
-or AC), read from its last report frame. Until the meter has sent one, nothing is sent.
+or AC), read from its last report frame with a valid checksum. Until the meter has sent one,
+nothing is sent.
 
 ## The socket
 
