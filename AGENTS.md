@@ -1,118 +1,132 @@
-# AGENTS.md — using `twiddle` from a coding agent
+# AGENTS.md
 
-Canonical machine-oriented guide for AI coding agents (OpenAI Codex, Google
-Antigravity, and any agent that reads `AGENTS.md`). Claude Code and Gemini CLI
-have thin pointer files (`CLAUDE.md`, `GEMINI.md`) that defer here.
+A guide for coding agents that use or change `twiddle`.
 
-`twiddle` reads & controls ATORCH USB/DC Bluetooth power meters. Prefer the
-**CLI** — it is the stable, scriptable interface. Use `--json` for parsing.
+`twiddle` reads and controls ATORCH USB and DC Bluetooth LE power meters. Use
+the **CLI**: it is the stable, scriptable interface. Add `--json` when you need
+to parse the output.
 
-## TL;DR command recipes
+## Command recipes
 
-```bash
-twiddle list --json                 # all devices + latest readings (JSON)
-twiddle get <name> --json           # one device's status+reading (JSON)
-twiddle scan --json                 # discover FFE0 meters in range
-twiddle reset <name> --counter all -y   # clear counters (DESTRUCTIVE, see below)
-twiddle config                      # effective config (source, socket, devices)
-twiddle service                     # run the persistent service (foreground)
+```sh
+twiddle list --json                     # all meters and their latest readings
+twiddle get <name> --json               # one meter's status and reading
+twiddle scan --json                     # meters advertising service FFE0 nearby
+twiddle reset <name> --counter all -y   # clear counters (destructive, see below)
+twiddle config                          # effective config: source, socket, meters
+twiddle service                         # run the service in the foreground
 ```
 
-Device names come from config (default bench setup: `twdlDEE`, `twdlDUM`).
-Never hard-code MAC addresses in code that calls this tool — use names and let
-config resolve them. Run `twiddle config` to discover available names.
+Meter names come from the config file. No meters are built in, so run
+`twiddle config` to see which names exist. Never hard-code a MAC address in code
+that calls this tool: use the name and let the config resolve it.
 
-## Architecture (what you can rely on)
+## Architecture
 
-- A **service** owns one persistent BLE connection per meter and caches the
-  latest reading. The **CLI** talks to it over a Unix socket
-  (default `/run/twiddle/twiddle.sock`, or `$TWIDDLE_SOCKET`).
-- Meters allow **only one BLE connection at a time**. Do **not** write your own
-  BLE client that connects directly while the service runs — go through the
-  CLI/socket/HTTP instead.
-- If no service is running, `get`/`reset` transparently fall back to a slower
-  one-shot direct connection.
+- A **service** keeps one Bluetooth LE connection per meter and caches the
+  latest reading. The **CLI** talks to it over a Unix socket. The socket path is
+  `$TWIDDLE_SOCKET` if set, else `$XDG_RUNTIME_DIR/twiddle.sock`, else
+  `/tmp/twiddle.sock`. A `socket` setting in the config file overrides it, and
+  `--socket` overrides both.
+- A meter accepts **one connection at a time**. Do not write a Bluetooth client
+  that connects to a meter while the service runs. Go through the CLI, the
+  socket or the HTTP endpoint instead.
+- If no service is running, `get` and `reset` fall back to a slower one-shot
+  connection of their own.
 
 ## Exit codes
 
-- `0` success · `1` runtime error (printed to stderr) · `2` usage/unknown device.
+- `0` success, `1` runtime error (printed to stderr), `2` usage error or
+  unknown meter name.
 
 ## JSON shapes
 
-`twiddle get <name> --json` →
+`twiddle get <name> --json` prints:
+
 ```json
 {
-  "name": "twdlDEE", "mac": "78:5F:2D:C4:0C:BD", "note": "servo / PWM power bus",
+  "name": "meter-a", "mac": "AA:BB:CC:DD:EE:01", "note": "USB load test",
   "connected": true, "connect_count": 3, "fail_streak": 0,
   "last_error": null, "age_s": 0.3,
   "reading": {
-    "device_type": "USB", "voltage": 8.02, "current": 0.14, "power": 1.12,
-    "capacity_ah": 25.657, "energy_wh": 298.99, "usb_dminus": 2.68,
-    "usb_dplus": 2.70, "temperature_c": 0, "runtime_s": 2907,
+    "device_type": "USB", "voltage": 5.08, "current": 0.52, "power": 2.642,
+    "capacity_ah": 1.234, "energy_wh": 6.27, "usb_dminus": 0.0,
+    "usb_dplus": 0.0, "temperature_c": 27, "runtime_s": 7384,
     "checksum_ok": true, "raw": "ff5501..."
   }
 }
 ```
-`reading` is `null` if no frame has been received yet. Check `connected` and
-`age_s` for freshness. `twiddle list --json` → `{"ok":true,"devices":{name:status}}`.
 
-## Optional HTTP/JSON (if `http_port` is configured)
+`reading` is `null` until the first frame arrives. Check `connected` and
+`age_s` (seconds since the last frame) for freshness. `twiddle list --json`
+prints `{"ok": true, "devices": {<name>: <status>, ...}}`.
 
-```bash
-curl -s http://127.0.0.1:8787/             # {"ok":true,"devices":{...}}
-curl -s http://127.0.0.1:8787/device/twdlDEE
+## Optional HTTP endpoint
+
+Only when `http_port` is set in `[service]`:
+
+```sh
+curl -s http://127.0.0.1:8787/
+curl -s http://127.0.0.1:8787/device/meter-a
 ```
 
-## Using the protocol library directly (Python)
+## The protocol library
 
-Pure, hardware-free codec — safe to import in tests/tools:
+`twiddle.protocol` is a pure codec with no I/O, safe to import in tests and
+tools:
+
 ```python
 from twiddle import protocol as P
 r = P.decode_report(frame_bytes)         # -> Reading | None
 P.verify_checksum(frame_bytes)           # -> bool
-P.build_reset("all", P.DEV_USB)          # -> command bytes (FF55 1103 05 .. 5D)
+P.build_reset("all", P.DEV_USB)          # -> bytes ff 55 11 03 05 00 00 00 00 5d
 ```
-BLE specifics: service `0000ffe0-…`, characteristic `0000ffe1-…` (notify +
-write); the meter auto-streams ~1 Hz report frames once you subscribe — no
-start command needed.
 
-## ⚠️ Safety — counter reset is destructive
+The meters use service `0000ffe0-…` and characteristic `0000ffe1-…` (notify and
+write). Once you subscribe, a meter sends a report frame about once a second;
+no start command is needed. See `docs/PROTOCOL.md`.
 
-`twiddle reset` permanently clears the meter's accumulated Ah / Wh / runtime.
-**Do not run it autonomously.** Only run it when the human explicitly asked to
-clear counters, and prefer to confirm which device and which counter first.
-Without `-y` the CLI prompts interactively (which will block a non-interactive
-agent — that friction is intentional).
+## Counter reset is destructive
 
-## Adding / renaming devices
+`twiddle reset` permanently clears the meter's accumulated A·h, W·h and
+runtime. **Do not run it on your own initiative.** Run it only when the human
+asked to clear counters, and name the meter and counter back to them first.
+Without `-y` the CLI asks for confirmation, which blocks a non-interactive
+agent. That friction is intended: do not pass `-y` for them without a clear go.
 
-Edit the active config (`twiddle config` shows its `source`):
+## Adding or renaming meters
+
+Edit the active config file (`twiddle config` shows its `source`):
+
 ```toml
-[devices.someName]
-mac  = "AA:BB:CC:DD:EE:FF"
+[devices.meter-c]
+mac  = "AA:BB:CC:DD:EE:03"
 note = "free text"
 ```
-Find MACs with `twiddle scan --json` (FFE0 advertisers; unmapped ones are
-shown). Then restart the service.
 
-## Tests & dev
+Find MAC addresses with `twiddle scan --json`; meters not yet in the config
+show `"name": null`. Restart the service after editing.
 
-```bash
-python -m pytest            # hardware-free protocol tests
-pip install -e .            # editable install (provides the `twiddle` command)
+## Tests and development
+
+```sh
+pip install -e .            # editable install; provides the `twiddle` command
+python -m pytest            # hardware-free tests
 ```
-Key modules: `protocol.py` (codec, no I/O), `client.py` (resilient BLE +
-one-shot helpers), `service.py` (persistent connections + socket/HTTP),
-`cli.py`, `config.py`.
+
+Modules: `protocol.py` (codec, no I/O), `client.py` (Bluetooth connections and
+one-shot helpers), `service.py` (connections, socket and HTTP), `cli.py`,
+`config.py`. Run the tests after any change to `protocol.py`. Brief `OFFLINE`
+states and a rising `fail_streak` are expected with these meters; the service
+reconnects on its own, so do not remove the retry or lock logic in `client.py`.
 
 ## Troubleshooting
 
-- **A device shows `OFFLINE` / `fail_streak` rising:** normal for the flakier
-  module; the service keeps retrying and will recover. Increase
-  `[ble] clear_cache_after` aggressiveness or `connect_timeout` in config if
-  persistent.
-- **Everything offline:** check the adapter (`hciconfig hci0`, `rfkill list`),
-  group membership (`bluetooth`), and that the phone app isn't holding the
-  meters (one central at a time).
-- **`twiddle list` says "no service":** start `twiddle service` (or the systemd
-  unit), or rely on the direct fallback for one-shot reads.
+- **One meter shows `OFFLINE` and `fail_streak` rises:** the service keeps
+  retrying. If it persists, raise `[ble] connect_timeout` or lower
+  `clear_cache_after` in the config.
+- **Every meter is offline:** check the adapter (`rfkill list`), that the user
+  is in the `bluetooth` group, and that no phone app holds the meters (each
+  takes one connection at a time).
+- **`twiddle list` says `no service`:** start `twiddle service` or the systemd
+  unit. `get` and `reset` still work without it, through a one-shot connection.

@@ -8,17 +8,16 @@ device counters.
 
 ```
 $ twiddle list
-twdlDEE  78:5F:2D:C4:0C:BD  online  (servo / PWM power bus)  [0.3s ago]
-    USB  V=8.02V  I=0.14A  P=1.12W
-    cap=25.657Ah  energy=298.99Wh  runtime=0h48m27s
-twdlDUM  D9:9B:58:F4:F1:0B  online  (logic / Pi rail)  [0.2s ago]
-    USB  V=7.66V  I=0.88A  P=6.74W
-    cap=6.135Ah  energy=37.42Wh  runtime=9h24m01s
+meter-a  AA:BB:CC:DD:EE:01  online  (USB load test)  [0.3s ago]
+    USB  V=5.08V  I=0.52A  P=2.642W
+    cap=1.234Ah  energy=6.27Wh  runtime=2h03m04s  temp=27C
+meter-b  AA:BB:CC:DD:EE:02  online  (DC supply)  [0.2s ago]
+    DC  V=12.3V  I=1.234A  P=15.1W
+    energy=45.67Wh  runtime=2h03m04s  temp=31C
 ```
 
 > **Agents:** see [`AGENTS.md`](AGENTS.md) for a machine-oriented usage guide
-> (commands, JSON schemas, exit codes). Tool-specific entry points:
-> [`CLAUDE.md`](CLAUDE.md), [`GEMINI.md`](GEMINI.md).
+> (commands, JSON schemas, exit codes).
 
 ## Why a service?
 
@@ -47,14 +46,14 @@ pip install -e .            # installs the `twiddle` command + bleak
 ## Quick start
 
 ```bash
-cp config.example.toml twiddle.toml      # edit device names/MACs if needed
+cp config.example.toml twiddle.toml      # then put in your meters' names/MACs
 twiddle scan                              # discover ATORCH (FFE0) devices + map names
 twiddle service                           # run the service (foreground; or use systemd)
 # in another shell:
 twiddle list                              # all devices + latest readings
-twiddle get twdlDEE --json                # one device as JSON
-twiddle watch twdlDEE                      # live updating reading
-twiddle reset twdlDUM --counter all        # clear counters (asks to confirm)
+twiddle get meter-a --json                # one device as JSON
+twiddle watch meter-a                      # live updating reading
+twiddle reset meter-b --counter all        # clear counters (asks to confirm)
 ```
 
 If **no service is running**, `get`/`reset` fall back to a direct one-shot BLE
@@ -73,9 +72,8 @@ mac  = "AA:BB:CC:DD:EE:FF"
 note = "what it's measuring"
 ```
 
-The two bench testers are interchangeable twins, so the default
-`twdlDEE`/`twdlDUM` ↔ MAC mapping is a starting guess — run `twiddle scan` and
-swap the MACs if a name lands on the wrong unit.
+No devices are built in: until a config file names some, twiddle has nothing
+to connect to. Run `twiddle scan` to find each meter's MAC address.
 
 ## Run as a systemd service
 
@@ -92,7 +90,7 @@ Set `http_port` in `[service]` to expose read-only JSON on localhost:
 
 ```bash
 curl -s http://127.0.0.1:8787/           # all devices
-curl -s http://127.0.0.1:8787/device/twdlDEE
+curl -s http://127.0.0.1:8787/device/meter-a
 ```
 
 ## Reading fields

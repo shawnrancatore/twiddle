@@ -21,14 +21,13 @@ command_timeout = 8.0     # seconds to wait for a command (e.g. reset) to write
 clear_cache_after = 6     # run `bluetoothctl remove <mac>` every N failures (0=never)
 
 # --- Devices -------------------------------------------------------------
-# Give each tester a friendly name. The two ATORCH units are interchangeable
-# twins, so this DEE/DUM <-> MAC mapping is just a starting guess — run
-# `twiddle scan` and swap the MACs if the names land on the wrong unit.
+# Give each meter a short name. Run `twiddle scan` to find the MAC addresses
+# of the meters in range, then list each one here. These two are examples.
 
-[devices.twdlDEE]
-mac  = "78:5F:2D:C4:0C:BD"
-note = "servo / PWM power bus"
+[devices.meter-a]
+mac  = "AA:BB:CC:DD:EE:01"
+note = "USB load test"
 
-[devices.twdlDUM]
-mac  = "D9:9B:58:F4:F1:0B"
-note = "logic / Pi rail"
+[devices.meter-b]
+mac  = "AA:BB:CC:DD:EE:02"
+note = "DC supply"

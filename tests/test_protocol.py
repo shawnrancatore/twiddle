@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from twiddle import protocol as P  # noqa: E402
 
-# Real frame captured from a bench tester (USB-type, device 0x03):
+# A real frame captured from a USB meter (device type 0x03):
 #   7.72 V, 0.82 A, 5.568 Ah, 33.07 Wh, D-/D+ 2.68/2.70 V, runtime 8h45m59s
 USB_FRAME = bytes.fromhex(
     "ff5501030003040000520015c000000ceb010c010e000000082d3b3c00000000000000b5")
