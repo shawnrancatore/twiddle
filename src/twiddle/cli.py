@@ -201,8 +201,7 @@ def cmd_scan(cfg, args) -> int:
 
 def cmd_service(cfg, args) -> int:
     from .service import run
-    run(cfg)
-    return 0
+    return run(cfg)
 
 
 def cmd_config(cfg, args) -> int:

@@ -5,11 +5,16 @@ no connection is attempted. HTTP tests talk to the real handler on an
 ephemeral port on 127.0.0.1; socket tests use a temporary socket file.
 """
 import asyncio
+import errno
+import io
 import json
 import os
+import socket
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -197,6 +202,43 @@ class TestSocketReset(unittest.TestCase):
         self.assertFalse(refused["ok"])
         self.assertTrue(done["ok"])
         self.assertEqual(svc.managers["meter-b"].resets, ["all"])
+
+
+class TestBusyHttpPort(unittest.TestCase):
+    """With the HTTP port taken, the service stops at once with one line,
+    before it creates its socket or starts any meter connection."""
+
+    def test_busy_port(self):
+        from twiddle import cli, client
+
+        held = socket.socket()
+        held.bind(("127.0.0.1", 0))
+        held.listen()
+        self.addCleanup(held.close)
+        port = held.getsockname()[1]
+
+        with tempfile.TemporaryDirectory() as d:
+            sock = os.path.join(d, "twiddle.sock")
+            cfg = os.path.join(d, "twiddle.toml")
+            with open(cfg, "w") as fh:
+                fh.write(f'[service]\nsocket = "{sock}"\nhttp_port = {port}\n\n'
+                         f'[devices.meter-a]\nmac = "AA:BB:CC:DD:EE:01"\n')
+            started = []
+
+            async def no_meter(self):
+                started.append(self.name)
+
+            err = io.StringIO()
+            with mock.patch.object(client.DeviceManager, "run", no_meter), \
+                    mock.patch("twiddle.service.logging.basicConfig"), \
+                    redirect_stderr(err):
+                rc = cli.main(["--config", cfg, "service"])
+
+            self.assertEqual(rc, 1)
+            self.assertEqual(err.getvalue(), f"error: cannot listen on 127.0.0.1:{port}: "
+                                             f"{os.strerror(errno.EADDRINUSE)}\n")
+            self.assertFalse(os.path.exists(sock))
+            self.assertEqual(started, [])
 
 
 class TestConfigCors(unittest.TestCase):

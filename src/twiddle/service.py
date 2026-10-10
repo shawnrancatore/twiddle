@@ -35,6 +35,7 @@ import json
 import logging
 import os
 import signal
+import sys
 
 from . import __version__
 from .client import DeviceManager
@@ -56,6 +57,10 @@ def _host_name(host: str) -> str:
     if host.startswith("["):
         return host.split("]", 1)[0] + "]"
     return host.split(":", 1)[0]
+
+
+class StartError(Exception):
+    """The service cannot start; the message says why."""
 
 
 class Service:
@@ -117,32 +122,40 @@ class Service:
                 writer.close()
 
     async def run(self) -> None:
-        # device supervisors
-        for m in self.managers.values():
-            self._tasks.append(asyncio.create_task(m.run(), name=f"dev:{m.name}"))
-
-        # unix socket
-        sock = self.cfg.socket
-        os.makedirs(os.path.dirname(sock) or ".", exist_ok=True)
-        with contextlib.suppress(FileNotFoundError):
-            os.unlink(sock)
-        server = await asyncio.start_unix_server(self._on_conn, path=sock)
-        os.chmod(sock, 0o660)
-        log.info("listening on %s (devices: %s)", sock, ", ".join(self.managers) or "none")
-
-        # optional HTTP
+        # Optional HTTP first: a port that is taken stops the start before the
+        # socket is touched or any meter connection begins.
         http_server = None
         if self.cfg.http_port:
-            http_server = await asyncio.start_server(
-                self._on_http, "127.0.0.1", self.cfg.http_port)
-            log.info("http json on http://127.0.0.1:%d/", self.cfg.http_port)
+            try:
+                http_server = await asyncio.start_server(
+                    self._on_http, "127.0.0.1", self.cfg.http_port)
+            except OSError as e:
+                reason = os.strerror(e.errno) if e.errno else str(e)
+                raise StartError(f"cannot listen on 127.0.0.1:{self.cfg.http_port}: "
+                                 f"{reason}") from None
 
-        stop = asyncio.Event()
-        loop = asyncio.get_running_loop()
-        for s in (signal.SIGINT, signal.SIGTERM):
-            with contextlib.suppress(NotImplementedError):
-                loop.add_signal_handler(s, stop.set)
+        sock = self.cfg.socket
+        server = None
         try:
+            # unix socket
+            os.makedirs(os.path.dirname(sock) or ".", exist_ok=True)
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(sock)
+            server = await asyncio.start_unix_server(self._on_conn, path=sock)
+            os.chmod(sock, 0o660)
+            log.info("listening on %s (devices: %s)", sock, ", ".join(self.managers) or "none")
+            if http_server:
+                log.info("http json on http://127.0.0.1:%d/", self.cfg.http_port)
+
+            # device supervisors
+            for m in self.managers.values():
+                self._tasks.append(asyncio.create_task(m.run(), name=f"dev:{m.name}"))
+
+            stop = asyncio.Event()
+            loop = asyncio.get_running_loop()
+            for s in (signal.SIGINT, signal.SIGTERM):
+                with contextlib.suppress(NotImplementedError):
+                    loop.add_signal_handler(s, stop.set)
             await stop.wait()
         finally:
             log.info("shutting down")
@@ -151,11 +164,12 @@ class Service:
             for t in self._tasks:
                 t.cancel()
             await asyncio.gather(*self._tasks, return_exceptions=True)
-            server.close()
             if http_server:
                 http_server.close()
-            with contextlib.suppress(FileNotFoundError):
-                os.unlink(sock)
+            if server:
+                server.close()
+                with contextlib.suppress(FileNotFoundError):
+                    os.unlink(sock)
 
     # -- minimal read-only HTTP (stdlib only) ----------------------------
     def http_route(self, method: str, path: str) -> tuple[int, dict]:
@@ -213,8 +227,14 @@ class Service:
                 writer.close()
 
 
-def run(cfg: Config) -> None:
+def run(cfg: Config) -> int:
+    """Run the service until SIGINT or SIGTERM. Returns the exit code."""
     logging.basicConfig(
         level=getattr(logging, cfg.log_level.upper(), logging.INFO),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    asyncio.run(Service(cfg).run())
+    try:
+        asyncio.run(Service(cfg).run())
+    except StartError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    return 0
