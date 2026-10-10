@@ -141,7 +141,7 @@ and has no meters. [config.example.toml](config.example.toml) lists every settin
 |---|---|---|
 | `[service] socket` | `$TWIDDLE_SOCKET`, else `$XDG_RUNTIME_DIR/twiddle.sock`, else `/tmp/twiddle.sock` | the Unix socket; `--socket` overrides it |
 | `[service] http_port` | off | port for the read-only HTTP endpoint on 127.0.0.1 |
-| `[service] http_cors_origin` | none | one web origin whose pages may read the HTTP endpoint |
+| `[service] http_cors_origin` | none | one web origin whose pages may read the HTTP endpoint; not `*` or `null` |
 | `[service] log_level` | `INFO` | service log level |
 | `[ble] connect_timeout` | `8.0` | seconds per connect attempt, scan included |
 | `[ble] reconnect_delay` | `2.0` | seconds between reconnect attempts |

@@ -78,12 +78,17 @@ def find_config_path(explicit: str | None = None) -> str | None:
 
 
 def _origin(value) -> str | None:
-    """Validate [service] http_cors_origin: absent, or a single origin."""
+    """Validate [service] http_cors_origin: absent, or a single origin.
+
+    "*" would let every site read the endpoint, and "null" every sandboxed
+    page or local file, so neither is accepted.
+    """
     if value is None:
         return None
-    if not isinstance(value, str) or not re.fullmatch(r"[!-~]+", value):
+    if (not isinstance(value, str) or not re.fullmatch(r"[!-~]+", value)
+            or value == "*" or value.lower() == "null"):
         raise ValueError('[service] http_cors_origin must be one origin, '
-                         'such as "http://localhost:3000"')
+                         'such as "http://localhost:3000", not "*" or "null"')
     return value
 
 

@@ -258,8 +258,10 @@ class TestConfigCors(unittest.TestCase):
         self.assertEqual(cfg.http_cors_origin, "http://localhost:3000")
 
     def test_rejects_more_than_one_origin(self):
+        # "*" lets every site read it, and "null" every sandboxed page or file
         for bad in ('"http://a.example.com http://b.example.com"',
-                    '"http://a.example.com\\r\\nX-Evil: 1"', "3000", '""'):
+                    '"http://a.example.com\\r\\nX-Evil: 1"', "3000", '""',
+                    '"*"', '"null"', '"NULL"'):
             with self.subTest(bad=bad):
                 with self.assertRaises(ValueError):
                     self.load(f"[service]\nhttp_cors_origin = {bad}\n")

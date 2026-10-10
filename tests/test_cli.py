@@ -106,11 +106,13 @@ class TestSocketPermission(CliCase):
 
 class TestBadConfig(CliCase):
     def test_bad_cors_origin_is_a_usage_error(self):
-        with open(self.config, "w") as fh:
-            fh.write('[service]\nhttp_cors_origin = "a b"\n')
-        rc, _, err = self.run_cli("config")
-        self.assertEqual(rc, 2)
-        self.assertIn("http_cors_origin", err)
+        for bad in ("a b", "*", "null"):
+            with self.subTest(bad=bad):
+                with open(self.config, "w") as fh:
+                    fh.write(f'[service]\nhttp_cors_origin = "{bad}"\n')
+                rc, _, err = self.run_cli("config")
+                self.assertEqual(rc, 2)
+                self.assertIn("http_cors_origin", err)
 
 
 if __name__ == "__main__":
