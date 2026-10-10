@@ -33,7 +33,7 @@ that calls this tool: use the name and let the config resolve it.
   socket or the HTTP endpoint instead.
 - If no service is running, `get` and `reset` fall back to a slower one-shot
   connection of their own. If the socket exists but this user may not open it,
-  the CLI stops with `permission denied` instead: a service holds the meters.
+  the CLI stops with `permission denied` and does not connect directly.
 - The socket speaks one JSON object per line. A `reset` request must carry
   `"confirm": true`, or the service refuses it; the CLI adds it after its
   prompt or with `-y`. The socket is mode 0660, so its owner and group decide
@@ -83,8 +83,8 @@ any method but `GET`, `403` for a `Host` other than `127.0.0.1` or
 
 ## The protocol library
 
-`twiddle.protocol` is a pure codec with no I/O, safe to import in tests and
-tools:
+`twiddle.protocol` is a pure codec with no I/O, so tests and tools can import
+it without a meter:
 
 ```python
 from twiddle import protocol as P
