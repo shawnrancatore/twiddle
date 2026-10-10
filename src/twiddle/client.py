@@ -21,6 +21,7 @@ import asyncio
 import contextlib
 import logging
 import time
+from dataclasses import dataclass
 
 from . import protocol as P
 
@@ -42,6 +43,15 @@ def reset_frame(device_type: str | None, counter: str) -> bytes:
         raise RuntimeError(f"meter reports unknown device type {device_type}; "
                            f"not sending a reset")
     return P.build_reset(counter, device_type=dev_type)
+
+
+@dataclass
+class Command:
+    """A frame waiting for the writer. `started` is set just before the write
+    begins, after which the frame may reach the meter whatever the caller does."""
+    frame: bytes
+    fut: asyncio.Future
+    started: bool = False
 
 
 async def _clear_bluez_cache(mac: str) -> None:
@@ -159,13 +169,15 @@ class DeviceManager:
             if time.time() - self.last_frame_ts > self.ble.stale_timeout:
                 raise TimeoutError("stream went stale")
             try:
-                frame, fut = await asyncio.wait_for(self._cmd_q.get(), timeout=1.0)
+                cmd = await asyncio.wait_for(self._cmd_q.get(), timeout=1.0)
             except asyncio.TimeoutError:
                 continue
+            fut = cmd.fut
             if fut.done():
                 continue  # the caller gave up; never write it later
             try:
-                await client.write_gatt_char(P.CHAR_UUID, frame, response=False)
+                cmd.started = True
+                await client.write_gatt_char(P.CHAR_UUID, cmd.frame, response=False)
                 if not fut.done():
                     fut.set_result(True)
             except Exception as e:
@@ -176,7 +188,7 @@ class DeviceManager:
 
     def _fail_pending(self) -> None:
         while not self._cmd_q.empty():
-            _frame, fut = self._cmd_q.get_nowait()
+            fut = self._cmd_q.get_nowait().fut
             if not fut.done():
                 fut.set_exception(ConnectionError(
                     f"{self.name} disconnected before the command was sent"))
@@ -195,13 +207,19 @@ class DeviceManager:
         if not self.connected:
             raise RuntimeError(f"{self.name} is not connected")
         fut: asyncio.Future = asyncio.get_running_loop().create_future()
-        await self._cmd_q.put((frame, fut))
+        cmd = Command(frame, fut)
+        await self._cmd_q.put(cmd)
         try:
             await asyncio.wait_for(fut, timeout=self.ble.command_timeout)
         except asyncio.TimeoutError:
             fut.cancel()
+            t = f"{self.ble.command_timeout:g}s"
+            if cmd.started:  # the write is under way and cannot be recalled
+                raise TimeoutError(f"reset may still be applied: {self.name} did not "
+                                   f"confirm it within {t}; read the meter before "
+                                   f"you send it again") from None
             raise TimeoutError(f"reset was not sent: {self.name} did not accept it "
-                               f"within {self.ble.command_timeout:g}s") from None
+                               f"within {t}") from None
         except asyncio.CancelledError:
             fut.cancel()
             raise

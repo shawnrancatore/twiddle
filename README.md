@@ -192,7 +192,10 @@ Clear 'all' counter(s) on meter-b (AA:BB:CC:DD:EE:02)? This is irreversible. [y/
 With the service running, the request goes over the socket with `"confirm": true`. Without it, the
 CLI connects to the meter directly. Either way, the command carries the meter's own type (USB, DC
 or AC), read from its last report frame with a valid checksum. Until the meter has sent one,
-nothing is sent. A reset that fails or times out is dropped, not retried later.
+nothing is sent.
+
+A reset that times out before it is written is dropped, never retried. If the write had already
+started, Twiddle says the reset may still be applied, and you should read the meter.
 
 ## The socket
 

@@ -237,7 +237,7 @@ class TestQueuedCommands(unittest.TestCase):
             m, client = connected_manager(), GatedClient()
             serve = asyncio.create_task(m._serve(client))
             first = asyncio.get_running_loop().create_future()
-            m._cmd_q.put_nowait((b"first", first))
+            m._cmd_q.put_nowait(C.Command(b"first", first))
             await asyncio.sleep(0.01)  # the writer is now blocked on `first`
             with self.assertRaises(TimeoutError) as cm:
                 await m.send_command(b"late")
@@ -249,6 +249,21 @@ class TestQueuedCommands(unittest.TestCase):
             await serve
             return client.writes
         self.assertEqual(asyncio.run(go()), [b"first"])
+
+    def test_timeout_during_a_write_says_it_may_still_be_applied(self):
+        async def go():
+            m, client = connected_manager(), GatedClient()
+            serve = asyncio.create_task(m._serve(client))
+            with self.assertRaises(TimeoutError) as cm:
+                await m.send_command(b"hung")  # the write itself hangs
+            client.gate.set()
+            await asyncio.sleep(0.05)
+            m.stop()
+            await serve
+            return str(cm.exception)
+        msg = asyncio.run(go())
+        self.assertIn("reset may still be applied", msg)
+        self.assertIn("read the meter before you send it again", msg)
 
     def test_commands_queued_before_a_disconnect_are_failed(self):
         async def go():
