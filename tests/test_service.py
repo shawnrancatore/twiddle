@@ -62,7 +62,7 @@ async def _http(svc: Service, raw: bytes):
     return status, headers, json.loads(body) if body else None
 
 
-def http(svc, method="GET", path="/", raw=None, host="127.0.0.1:8787"):
+def http(svc, method="GET", path="/", raw=None, host="127.0.0.1:8731"):
     if raw is None:
         host_line = f"Host: {host}\r\n" if host is not None else ""
         raw = f"{method} {path} HTTP/1.1\r\n{host_line}Accept: */*\r\n\r\n".encode()
@@ -129,13 +129,13 @@ class TestHttpHost(unittest.TestCase):
     names that site, so only local host names are answered."""
 
     def test_local_names_are_answered(self):
-        for host in ("127.0.0.1:8787", "localhost:8787", "LOCALHOST", "127.0.0.1", None):
+        for host in ("127.0.0.1:8731", "localhost:8731", "LOCALHOST", "127.0.0.1", None):
             with self.subTest(host=host):
                 self.assertEqual(http(make_service(), path="/", host=host)[0], 200)
 
     def test_other_names_are_refused(self):
-        for host in ("attacker.example.com:8787", "example.com", "127.0.0.1.example.com",
-                     "localhost.example.com:8787"):
+        for host in ("attacker.example.com:8731", "example.com", "127.0.0.1.example.com",
+                     "localhost.example.com:8731"):
             with self.subTest(host=host):
                 status, _, body = http(make_service(), path="/device/meter-a", host=host)
                 self.assertEqual(status, 403)

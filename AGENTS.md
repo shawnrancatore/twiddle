@@ -72,8 +72,8 @@ Only when `http_port` is set in `[service]`. It listens on 127.0.0.1, answers
 `GET` only, and cannot reset anything:
 
 ```sh
-curl -s http://127.0.0.1:8787/
-curl -s http://127.0.0.1:8787/device/meter-a
+curl -s http://127.0.0.1:8731/
+curl -s http://127.0.0.1:8731/device/meter-a
 ```
 
 Errors carry real status codes: `404` for an unknown meter or path, `405` for

@@ -51,7 +51,7 @@ LOCAL_HOSTS = {"127.0.0.1", "localhost"}
 
 
 def _host_name(host: str) -> str:
-    """'localhost:8787' -> 'localhost'; '[::1]:8787' -> '[::1]'."""
+    """'localhost:8731' -> 'localhost'; '[::1]:8731' -> '[::1]'."""
     host = host.strip().lower()
     if host.startswith("["):
         return host.split("]", 1)[0] + "]"

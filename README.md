@@ -204,11 +204,11 @@ the meter itself.
 
 ## HTTP endpoint
 
-Set `http_port = 8787` in `[service]`, restart the service, and:
+Set `http_port = 8731` in `[service]`, restart the service, and:
 
 ```sh
-curl -s http://127.0.0.1:8787/
-curl -s http://127.0.0.1:8787/device/meter-a
+curl -s http://127.0.0.1:8731/
+curl -s http://127.0.0.1:8731/device/meter-a
 ```
 
 | Request | Result |

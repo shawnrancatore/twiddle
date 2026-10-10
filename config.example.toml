@@ -13,7 +13,7 @@
 # /run/twiddle/twiddle.sock.
 # socket = "/run/twiddle/twiddle.sock"
 # Optional read-only HTTP/JSON endpoint on 127.0.0.1 (omit to disable).
-# http_port = 8787
+# http_port = 8731
 # One web origin whose pages may read that endpoint from a browser. Omit it
 # to send no CORS header, so pages from other origins cannot read it.
 # http_cors_origin = "http://localhost:3000"
