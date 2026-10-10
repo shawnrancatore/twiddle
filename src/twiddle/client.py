@@ -27,6 +27,23 @@ from . import protocol as P
 log = logging.getLogger("twiddle.client")
 
 
+def reset_frame(reading: P.Reading | None, counter: str) -> bytes:
+    """The reset command for the meter that sent `reading`.
+
+    A command frame carries a device type, and it must be the meter's own, so
+    it comes from the meter's last report frame. With no frame yet, or a
+    device type the protocol does not list, nothing is sent.
+    """
+    if reading is None:
+        raise RuntimeError("no report frame from this meter yet, so its type is "
+                           "unknown; try again once it is reporting")
+    dev_type = P.DEV_CODES.get(reading.device_type)
+    if dev_type is None:
+        raise RuntimeError(f"meter reports unknown device type {reading.device_type}; "
+                           f"not sending a reset")
+    return P.build_reset(counter, device_type=dev_type)
+
+
 async def _clear_bluez_cache(mac: str) -> None:
     """Best-effort `bluetoothctl remove <mac>` to drop stale BlueZ state."""
     try:
@@ -166,10 +183,7 @@ class DeviceManager:
         await asyncio.wait_for(fut, timeout=self.ble.command_timeout)
 
     async def reset(self, counter: str = "all") -> None:
-        dtype = P.DEV_USB
-        if self.last_reading and self.last_reading.device_type == "DC":
-            dtype = P.DEV_DC
-        await self.send_command(P.build_reset(counter, device_type=dtype))
+        await self.send_command(reset_frame(self.last_reading, counter))
 
     def stop(self) -> None:
         self._stop = True
@@ -198,10 +212,8 @@ async def _connect_retry(mac: str, ble, attempts: int):
     raise last or TimeoutError("connect failed")
 
 
-async def read_once(mac: str, ble, attempts: int = 20, settle: float = 6.0) -> P.Reading:
-    """Connect, grab one decoded reading, disconnect. For CLI use without a
-    running service (competes for the single-central connection)."""
-    client = await _connect_retry(mac, ble, attempts)
+async def _first_reading(client, settle: float) -> P.Reading:
+    """Subscribe and wait up to `settle` seconds for a decoded report frame."""
     buf = bytearray()
     result: list[P.Reading] = []
 
@@ -212,29 +224,40 @@ async def read_once(mac: str, ble, attempts: int = 20, settle: float = 6.0) -> P
             if r:
                 result.append(r)
 
-    try:
-        await client.start_notify(P.CHAR_UUID, cb)
-        deadline = asyncio.get_running_loop().time() + settle
-        while not result and asyncio.get_running_loop().time() < deadline:
-            await asyncio.sleep(0.2)
-    finally:
-        try:
-            await client.disconnect()
-        except Exception:
-            pass
+    await client.start_notify(P.CHAR_UUID, cb)
+    deadline = asyncio.get_running_loop().time() + settle
+    while not result and asyncio.get_running_loop().time() < deadline:
+        await asyncio.sleep(0.2)
     if not result:
         raise TimeoutError("connected but no report frame received")
     return result[-1]
 
 
-async def command_once(mac: str, frame: bytes, ble, attempts: int = 20) -> None:
-    """Connect, write one command, disconnect."""
+async def read_once(mac: str, ble, attempts: int = 20, settle: float = 6.0) -> P.Reading:
+    """Connect, grab one decoded reading, disconnect. For CLI use without a
+    running service (competes for the single-central connection)."""
     client = await _connect_retry(mac, ble, attempts)
     try:
-        await client.write_gatt_char(P.CHAR_UUID, frame, response=False)
-        await asyncio.sleep(0.3)
+        return await _first_reading(client, settle)
     finally:
-        try:
+        with contextlib.suppress(Exception):
             await client.disconnect()
-        except Exception:
-            pass
+
+
+async def reset_once(mac: str, counter: str, ble, attempts: int = 20,
+                     settle: float = 6.0) -> str:
+    """Connect, read one report frame to learn the meter's device type, write
+    the reset for that type, disconnect. Returns the device type ("USB", "DC"
+    or "AC"). For CLI use without a running service."""
+    if counter.lower() not in P.RESET_CODES:
+        raise ValueError(f"unknown counter {counter!r}; choose from {sorted(P.RESET_CODES)}")
+    client = await _connect_retry(mac, ble, attempts)
+    try:
+        reading = await _first_reading(client, settle)
+        await client.write_gatt_char(P.CHAR_UUID, reset_frame(reading, counter),
+                                     response=False)
+        await asyncio.sleep(0.3)
+        return reading.device_type
+    finally:
+        with contextlib.suppress(Exception):
+            await client.disconnect()

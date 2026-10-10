@@ -68,6 +68,10 @@ Checksum over `frame[2:-1]` as above. Examples:
 - reset-all, USB (`devType 0x03`): `FF 55 11 03 05 00 00 00 00 5D`
 - reset-all, generic (`devType 0x01`): `FF 55 11 01 05 00 00 00 00 53`
 
+twiddle puts the meter's own `devType` in a reset, taken from that meter's last
+report frame. Without a report frame, or with a `devType` not listed above, it
+sends nothing.
+
 ## Validated test vector
 
 A real captured USB frame

@@ -88,5 +88,43 @@ class TestCommands(unittest.TestCase):
         self.assertEqual(P.checksum(frame[2:-1]), frame[-1])
 
 
+class TestResetBytes(unittest.TestCase):
+    """build_reset against PROTOCOL.md's command frame for every meter type:
+    FF 55 11 <devType> <code> <value:4 BE> <checksum>, with codes 01 W·h,
+    02 A·h, 03 runtime, 05 all, and checksum (sum(frame[2:-1]) & 0xFF) ^ 0x44.
+    """
+
+    EXPECTED = {
+        # (device type, counter): frame
+        (P.DEV_AC, "wh"): "ff 55 11 01 01 00 00 00 00 57",
+        (P.DEV_AC, "ah"): "ff 55 11 01 02 00 00 00 00 50",
+        (P.DEV_AC, "duration"): "ff 55 11 01 03 00 00 00 00 51",
+        (P.DEV_AC, "all"): "ff 55 11 01 05 00 00 00 00 53",  # PROTOCOL.md example
+        (P.DEV_DC, "wh"): "ff 55 11 02 01 00 00 00 00 50",
+        (P.DEV_DC, "ah"): "ff 55 11 02 02 00 00 00 00 51",
+        (P.DEV_DC, "duration"): "ff 55 11 02 03 00 00 00 00 52",
+        (P.DEV_DC, "all"): "ff 55 11 02 05 00 00 00 00 5c",
+        (P.DEV_USB, "wh"): "ff 55 11 03 01 00 00 00 00 51",
+        (P.DEV_USB, "ah"): "ff 55 11 03 02 00 00 00 00 52",
+        (P.DEV_USB, "duration"): "ff 55 11 03 03 00 00 00 00 53",
+        (P.DEV_USB, "all"): "ff 55 11 03 05 00 00 00 00 5d",  # PROTOCOL.md example
+    }
+
+    def test_documented_bytes(self):
+        for (dev, counter), expected in self.EXPECTED.items():
+            with self.subTest(dev=dev, counter=counter):
+                self.assertEqual(P.build_reset(counter, dev), bytes.fromhex(expected))
+
+    def test_checksum_is_documented_formula(self):
+        for (dev, counter) in self.EXPECTED:
+            with self.subTest(dev=dev, counter=counter):
+                frame = P.build_reset(counter, dev)
+                self.assertEqual(frame[-1], (sum(frame[2:-1]) & 0xFF) ^ 0x44)
+                self.assertTrue(P.verify_checksum(frame))
+
+    def test_device_type_codes_match_protocol(self):
+        self.assertEqual((P.DEV_AC, P.DEV_DC, P.DEV_USB), (0x01, 0x02, 0x03))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

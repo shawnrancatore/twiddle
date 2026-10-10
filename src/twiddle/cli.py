@@ -140,9 +140,11 @@ def cmd_reset(cfg, args) -> int:
             print("aborted"); return 1
     resp = _ipc(cfg, {"cmd": "reset", "device": args.device, "counter": args.counter})
     if resp is None:
-        from .client import command_once
+        # no service: connect directly, learn the meter's type from one report
+        # frame, then send the reset for that type
+        from .client import reset_once
         try:
-            asyncio.run(command_once(dev.mac, P.build_reset(args.counter), cfg.ble))
+            asyncio.run(reset_once(dev.mac, args.counter, cfg.ble))
             resp = {"ok": True}
         except Exception as e:
             print(f"error: {type(e).__name__}: {e}", file=sys.stderr); return 1

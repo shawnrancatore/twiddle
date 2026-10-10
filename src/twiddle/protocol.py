@@ -30,6 +30,7 @@ DEV_AC = 0x01
 DEV_DC = 0x02
 DEV_USB = 0x03
 DEV_NAMES = {DEV_AC: "AC", DEV_DC: "DC", DEV_USB: "USB"}
+DEV_CODES = {name: code for code, name in DEV_NAMES.items()}  # "USB" -> 0x03
 
 # Reset command codes (written as the "command code" byte of a 0x11 frame).
 RESET_CODES = {
