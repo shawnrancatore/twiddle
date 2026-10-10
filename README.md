@@ -78,15 +78,24 @@ to connect to. Run `twiddle scan` to find each meter's MAC address.
 ## Run as a systemd service
 
 ```bash
+sudo install -D -m 644 config.example.toml /etc/twiddle/config.toml   # edit as needed
 sudo cp systemd/twiddle.service /etc/systemd/system/
-sudo cp config.example.toml /etc/twiddle/config.toml   # edit as needed
 sudo systemctl enable --now twiddle
 twiddle --socket /run/twiddle/twiddle.sock list
 ```
 
+The unit puts the socket at `/run/twiddle/twiddle.sock`, mode 0660. As shipped
+it runs as root, so only root can use the socket. Uncomment `User=` and
+`Group=bluetooth` in the unit to let members of that group read meters and
+reset counters.
+
 ## Optional HTTP/JSON endpoint
 
-Set `http_port` in `[service]` to expose read-only JSON on localhost:
+Set `http_port` in `[service]` to expose read-only JSON on 127.0.0.1. It
+answers `GET` only, with `404` for an unknown meter or path, `405` for other
+methods and `403` for a `Host` other than `127.0.0.1` or `localhost`. It sends
+no CORS header unless `http_cors_origin` names one origin, so web pages from
+other origins cannot read it.
 
 ```bash
 curl -s http://127.0.0.1:8787/           # all devices
@@ -120,7 +129,9 @@ tested.
 
 `twiddle reset <device> --counter {all,wh,ah,duration}` writes a command frame
 to the meter. **This is irreversible** and wipes the accumulated Ah/Wh/runtime;
-the CLI asks for confirmation unless you pass `-y`.
+the CLI asks for confirmation unless you pass `-y`. Over the socket, a reset
+request must carry `"confirm": true`. Anyone who can open the socket file can
+send one, so its owner and group (mode 0660) decide who may reset.
 
 ## Testing (no hardware)
 

@@ -11,6 +11,7 @@ If no file is found, built-in defaults are used and no devices are configured
 from __future__ import annotations
 
 import os
+import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -46,6 +47,7 @@ class Device:
 class Config:
     socket: str = DEFAULT_SOCKET
     http_port: int | None = None     # optional read-only HTTP/JSON endpoint
+    http_cors_origin: str | None = None  # one web origin allowed to read it
     log_level: str = "INFO"
     ble: BleTuning = field(default_factory=BleTuning)
     devices: dict[str, Device] = field(default_factory=dict)
@@ -75,6 +77,16 @@ def find_config_path(explicit: str | None = None) -> str | None:
     return None
 
 
+def _origin(value) -> str | None:
+    """Validate [service] http_cors_origin: absent, or a single origin."""
+    if value is None:
+        return None
+    if not isinstance(value, str) or not re.fullmatch(r"[!-~]+", value):
+        raise ValueError('[service] http_cors_origin must be one origin, '
+                         'such as "http://localhost:3000"')
+    return value
+
+
 def load(explicit: str | None = None) -> Config:
     path = find_config_path(explicit)
     raw: dict = {}
@@ -88,6 +100,7 @@ def load(explicit: str | None = None) -> Config:
     svc = raw.get("service", {})
     cfg.socket = svc.get("socket", cfg.socket)
     cfg.http_port = svc.get("http_port", cfg.http_port)
+    cfg.http_cors_origin = _origin(svc.get("http_cors_origin"))
     cfg.log_level = svc.get("log_level", cfg.log_level)
 
     ble = raw.get("ble", {})

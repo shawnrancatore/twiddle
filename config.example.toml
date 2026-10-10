@@ -6,11 +6,17 @@
 # values fall back to the built-in defaults shown here.
 
 [service]
-# Unix socket the service listens on and the CLI talks to.
-# For a system-wide systemd service use "/run/twiddle/twiddle.sock".
-socket = "/run/twiddle/twiddle.sock"
-# Optional read-only HTTP/JSON endpoint on localhost (omit to disable).
+# Unix socket the service listens on and the CLI talks to. Default:
+# $TWIDDLE_SOCKET, else $XDG_RUNTIME_DIR/twiddle.sock, else /tmp/twiddle.sock.
+# The service makes it mode 0660, so the socket's owner and group decide who
+# may read meters and reset counters. The systemd unit uses
+# /run/twiddle/twiddle.sock.
+# socket = "/run/twiddle/twiddle.sock"
+# Optional read-only HTTP/JSON endpoint on 127.0.0.1 (omit to disable).
 # http_port = 8787
+# One web origin whose pages may read that endpoint from a browser. Omit it
+# to send no CORS header, so pages from other origins cannot read it.
+# http_cors_origin = "http://localhost:3000"
 log_level = "INFO"
 
 [ble]

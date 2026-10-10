@@ -1,6 +1,7 @@
 """twiddle service: holds persistent BLE connections to every configured
 tester and answers requests over a Unix-domain socket (newline-delimited
-JSON). Optionally also serves a tiny read-only HTTP/JSON endpoint.
+JSON). Optionally also serves a tiny read-only HTTP/JSON endpoint on
+127.0.0.1.
 
 Why a service? The meters allow only ONE BLE central at a time. The service
 owns the single connection per device; the CLI and any agents talk to the
@@ -13,9 +14,18 @@ IPC protocol (Unix socket, one JSON object per line, one response per line):
   <- {"ok": true, "devices": {name: <status>, ...}}
   -> {"cmd": "get", "device": "<name>"}
   <- {"ok": true, "status": <status>}
-  -> {"cmd": "reset", "device": "<name>", "counter": "all"}
+  -> {"cmd": "reset", "device": "<name>", "counter": "all", "confirm": true}
   <- {"ok": true}
 On error: {"ok": false, "error": "..."}.
+
+A reset without "confirm": true is refused. That guards against a request
+sent by mistake, not against a hostile one: the socket is created mode 0660,
+so its owner and group decide who may read meters and reset counters.
+
+HTTP (GET only): / and /devices list every meter, /device/<name> gives one.
+Errors get 400, 403, 404 or 405. A Host header other than 127.0.0.1 or
+localhost gets 403. No CORS header is sent unless [service] http_cors_origin
+names one origin.
 """
 from __future__ import annotations
 
@@ -31,6 +41,21 @@ from .client import DeviceManager
 from .config import Config
 
 log = logging.getLogger("twiddle.service")
+
+HTTP_REASONS = {200: "OK", 400: "Bad Request", 403: "Forbidden",
+                404: "Not Found", 405: "Method Not Allowed"}
+# The HTTP server listens on 127.0.0.1 only. A browser always sends the Host
+# it thinks it is talking to, so refusing any other name stops a web page
+# that points its own host name at 127.0.0.1 (DNS rebinding) from reading it.
+LOCAL_HOSTS = {"127.0.0.1", "localhost"}
+
+
+def _host_name(host: str) -> str:
+    """'localhost:8787' -> 'localhost'; '[::1]:8787' -> '[::1]'."""
+    host = host.strip().lower()
+    if host.startswith("["):
+        return host.split("]", 1)[0] + "]"
+    return host.split(":", 1)[0]
 
 
 class Service:
@@ -61,6 +86,9 @@ class Service:
             m = self.managers.get(req.get("device"))
             if not m:
                 return {"ok": False, "error": f"unknown device {req.get('device')!r}"}
+            if req.get("confirm") is not True:
+                return {"ok": False, "error": 'reset clears the meter\'s counters and '
+                        'needs "confirm": true in the request'}
             try:
                 await m.reset(req.get("counter", "all"))
                 return {"ok": True}
@@ -130,32 +158,53 @@ class Service:
                 os.unlink(sock)
 
     # -- minimal read-only HTTP (stdlib only) ----------------------------
+    def http_route(self, method: str, path: str) -> tuple[int, dict]:
+        """Map one request to (status, JSON body). Read-only: GET only."""
+        if method != "GET":
+            return 405, {"ok": False, "error": "read-only endpoint; use GET"}
+        if path.rstrip("/") in ("", "/devices"):
+            return 200, {"ok": True,
+                         "devices": {n: m.status() for n, m in self.managers.items()}}
+        if path.startswith("/device/"):
+            name = path[len("/device/"):].strip("/")
+            m = self.managers.get(name)
+            if m:
+                return 200, {"ok": True, "status": m.status()}
+            return 404, {"ok": False, "error": f"unknown device {name!r}"}
+        return 404, {"ok": False, "error": "not found; try / or /device/<name>"}
+
     async def _on_http(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         try:
             request = await asyncio.wait_for(reader.readline(), timeout=10)
             if not request:
                 return
             parts = request.decode("latin1").split()
-            path = parts[1] if len(parts) > 1 else "/"
-            # drain headers
-            while True:
+            host = None
+            while True:  # read the headers; only Host matters
                 h = await asyncio.wait_for(reader.readline(), timeout=10)
                 if h in (b"\r\n", b"\n", b""):
                     break
-            if path.rstrip("/") in ("", "/devices"):
-                body = {"ok": True, "devices": {n: m.status() for n, m in self.managers.items()}}
-            elif path.startswith("/device/"):
-                name = path[len("/device/"):].strip("/")
-                m = self.managers.get(name)
-                body = ({"ok": True, "status": m.status()} if m
-                        else {"ok": False, "error": f"unknown device {name!r}"})
+                name, _, value = h.decode("latin1").partition(":")
+                if name.strip().lower() == "host":
+                    host = value
+            if not (len(parts) == 3 and parts[2].startswith("HTTP/")):
+                status, body = 400, {"ok": False, "error": "bad request"}
+            elif host is not None and _host_name(host) not in LOCAL_HOSTS:
+                status, body = 403, {"ok": False,
+                                     "error": "Host must be 127.0.0.1 or localhost"}
             else:
-                body = {"ok": False, "error": "not found; try / or /device/<name>"}
+                status, body = self.http_route(parts[0], parts[1])
             payload = json.dumps(body).encode()
-            writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
-                         b"Access-Control-Allow-Origin: *\r\n"
-                         b"Content-Length: %d\r\nConnection: close\r\n\r\n" % len(payload))
-            writer.write(payload)
+            head = [f"HTTP/1.1 {status} {HTTP_REASONS[status]}",
+                    "Content-Type: application/json",
+                    f"Content-Length: {len(payload)}",
+                    "Connection: close"]
+            if status == 405:
+                head.append("Allow: GET")
+            if self.cfg.http_cors_origin:
+                # one origin, set by the operator; never "*" by default
+                head.append(f"Access-Control-Allow-Origin: {self.cfg.http_cors_origin}")
+            writer.write(("\r\n".join(head) + "\r\n\r\n").encode("latin1") + payload)
             await writer.drain()
         except Exception as e:
             log.debug("http error: %s", e)

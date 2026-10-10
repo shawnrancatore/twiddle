@@ -18,12 +18,25 @@ from . import __version__, protocol as P
 from . import config as configmod
 
 
+class SocketDenied(Exception):
+    """The service socket exists but this user may not open it."""
+
+
 def _ipc(cfg, req: dict, timeout: float = 12.0) -> dict | None:
-    """Send one request to the service; return response, or None if no service."""
+    """Send one request to the service; return response, or None if no service.
+
+    A socket this user may not open means a service is running, so that
+    raises SocketDenied instead of returning None: falling back to a direct
+    connection would fight the service for the meter.
+    """
     try:
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         s.settimeout(timeout)
         s.connect(cfg.socket)
+    except PermissionError:
+        raise SocketDenied(
+            f"permission denied on {cfg.socket}: a service is running, and the "
+            f"socket's owner and group decide who may use it")
     except (FileNotFoundError, ConnectionRefusedError, OSError):
         return None
     try:
@@ -138,7 +151,8 @@ def cmd_reset(cfg, args) -> int:
                     f"This is irreversible. [y/N] ").strip().lower()
         if ans not in ("y", "yes"):
             print("aborted"); return 1
-    resp = _ipc(cfg, {"cmd": "reset", "device": args.device, "counter": args.counter})
+    resp = _ipc(cfg, {"cmd": "reset", "device": args.device, "counter": args.counter,
+                      "confirm": True})
     if resp is None:
         # no service: connect directly, learn the meter's type from one report
         # frame, then send the reset for that type
@@ -193,6 +207,7 @@ def cmd_service(cfg, args) -> int:
 
 def cmd_config(cfg, args) -> int:
     info = {"source": cfg.source, "socket": cfg.socket, "http_port": cfg.http_port,
+            "http_cors_origin": cfg.http_cors_origin,
             "devices": {n: {"mac": d.mac, "note": d.note} for n, d in cfg.devices.items()}}
     print(json.dumps(info, indent=2))
     return 0
@@ -237,13 +252,18 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
-    cfg = configmod.load(args.config)
+    try:
+        cfg = configmod.load(args.config)
+    except ValueError as e:  # includes TOML syntax errors
+        print(f"error: config: {e}", file=sys.stderr); return 2
     if args.socket:
         cfg.socket = args.socket
     try:
         return args.func(cfg, args)
     except KeyError as e:
         print(f"error: {e}", file=sys.stderr); return 2
+    except SocketDenied as e:
+        print(f"error: {e}", file=sys.stderr); return 1
     except BrokenPipeError:
         return 0
 

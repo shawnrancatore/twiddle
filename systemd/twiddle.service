@@ -10,9 +10,20 @@ Type=simple
 #   ExecStart=/opt/twiddle/.venv/bin/twiddle service
 ExecStart=/usr/local/bin/twiddle service
 Environment=TWIDDLE_CONFIG=/etc/twiddle/config.toml
-# Socket lives under /run/twiddle (matches config.example.toml).
+# The socket's owner and group decide who may read meters and reset counters:
+# the service creates it mode 0660. As written, the unit runs as root, so only
+# root can use the socket. To let the members of a group use it, run the
+# service as an unprivileged user in that group. That user must be allowed to
+# use BlueZ; on a Raspberry Pi that means the bluetooth group.
+#User=twiddle
+#Group=bluetooth
+# systemd creates /run/twiddle at start, owned by User= and Group=, and removes
+# it at stop. 0755 lets other users reach the socket inside; the socket's own
+# mode (0660) still decides who may use it. A socket setting in the config
+# file overrides TWIDDLE_SOCKET.
 RuntimeDirectory=twiddle
 RuntimeDirectoryMode=0755
+Environment=TWIDDLE_SOCKET=/run/twiddle/twiddle.sock
 Restart=always
 RestartSec=3
 # Hardening (relax if it interferes with your BlueZ setup).

@@ -32,7 +32,12 @@ that calls this tool: use the name and let the config resolve it.
   that connects to a meter while the service runs. Go through the CLI, the
   socket or the HTTP endpoint instead.
 - If no service is running, `get` and `reset` fall back to a slower one-shot
-  connection of their own.
+  connection of their own. If the socket exists but this user may not open it,
+  the CLI stops with `permission denied` instead: a service holds the meters.
+- The socket speaks one JSON object per line. A `reset` request must carry
+  `"confirm": true`, or the service refuses it; the CLI adds it after its
+  prompt or with `-y`. The socket is mode 0660, so its owner and group decide
+  who may read meters and reset counters.
 
 ## Exit codes
 
@@ -63,12 +68,18 @@ prints `{"ok": true, "devices": {<name>: <status>, ...}}`.
 
 ## Optional HTTP endpoint
 
-Only when `http_port` is set in `[service]`:
+Only when `http_port` is set in `[service]`. It listens on 127.0.0.1, answers
+`GET` only, and cannot reset anything:
 
 ```sh
 curl -s http://127.0.0.1:8787/
 curl -s http://127.0.0.1:8787/device/meter-a
 ```
+
+Errors carry real status codes: `404` for an unknown meter or path, `405` for
+any method but `GET`, `403` for a `Host` other than `127.0.0.1` or
+`localhost`, `400` for a malformed request. It sends no CORS header unless
+`http_cors_origin` names one origin.
 
 ## The protocol library
 
