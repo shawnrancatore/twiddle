@@ -9,7 +9,7 @@ description = "Reliable service + CLI for ATORCH USB/DC BLE testers (UD18-class)
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "rancatron" }]
+authors = [{ name = "Shawn Rancatore" }]
 keywords = ["atorch", "ud18", "ble", "bluetooth", "usb-tester", "power-meter"]
 dependencies = ["bleak>=0.21"]
 
