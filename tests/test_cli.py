@@ -104,6 +104,51 @@ class TestSocketPermission(CliCase):
         self.assertIn("permission denied", err)
 
 
+class TestUnknownDevice(CliCase):
+    def test_error_has_no_stray_quotes(self):
+        rc, _, err = self.run_cli("get", "nope")
+        self.assertEqual(rc, 2)
+        self.assertEqual(err, "error: unknown device 'nope'; known: meter-a\n")
+
+
+class TestListAge(CliCase):
+    def test_an_old_reading_is_shown_as_old(self):
+        st = {"name": "meter-a", "mac": "AA:BB:CC:DD:EE:01", "note": "",
+              "connected": True, "age_s": 12.3, "reading": None}
+        with mock.patch.object(cli, "_ipc",
+                               lambda _cfg, _req: {"ok": True, "devices": {"meter-a": st}}):
+            _, out, _ = self.run_cli("list")
+        self.assertIn("online  [12.3s ago]", out)
+
+
+class _Dev:
+    def __init__(self, address): self.address = address
+
+
+class _Adv:
+    def __init__(self, rssi, name=None, uuids=("0000ffe0-0000-1000-8000-00805f9b34fb",)):
+        self.rssi, self.local_name, self.service_uuids = rssi, name, list(uuids)
+
+
+class TestScanOutput(unittest.TestCase):
+    def test_records_name_and_rssi_of_ffe0_devices_only(self):
+        found = {}
+        cli._record_advert(found, _Dev("AA:BB:CC:DD:EE:01"), _Adv(-60, "UD18_BLE"))
+        cli._record_advert(found, _Dev("AA:BB:CC:DD:EE:02"), _Adv(-70))
+        cli._record_advert(found, _Dev("AA:BB:CC:DD:EE:03"), _Adv(-50, "other", uuids=["180f"]))
+        self.assertEqual(found, {"AA:BB:CC:DD:EE:01": (-60, "UD18_BLE"),
+                                 "AA:BB:CC:DD:EE:02": (-70, None)})
+
+    def test_lines_show_name_or_no_name(self):
+        found = {"AA:BB:CC:DD:EE:02": (-70, None), "AA:BB:CC:DD:EE:01": (-60, "UD18_BLE")}
+        known = {"AA:BB:CC:DD:EE:01": "meter-a"}
+        lines = cli.format_scan(found, known, 8.0)
+        self.assertNotIn("ATORCH", lines[0])
+        self.assertIn("FFE0", lines[0])
+        self.assertEqual(lines[1], "  AA:BB:CC:DD:EE:01  rssi=-60  UD18_BLE  <- meter-a")
+        self.assertEqual(lines[2], "  AA:BB:CC:DD:EE:02  rssi=-70  (no name)  (unmapped)")
+
+
 class TestBadConfig(CliCase):
     def test_bad_cors_origin_is_a_usage_error(self):
         for bad in ("a b", "*", "null"):

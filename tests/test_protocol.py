@@ -20,6 +20,43 @@ import frames  # noqa: E402
 USB_FRAME = bytes.fromhex(
     "ff5501030003040000520015c000000ceb010c010e000000082d3b3c00000000000000b5")
 
+# Real frames from two ATORCH UD18 (USB-type) meters, as `twiddle get --json`
+# printed them. Neither meter fills the temperature bytes.
+UD18_A_FRAME = bytes.fromhex(
+    "ff5501030001eb0000040378880003169f000500120000031b1c273c0000000000000027")
+UD18_B_FRAME = bytes.fromhex(
+    "ff5501030001eb0000070004ba0000026700050012000000032f323c0000000000000091")
+
+
+class TestRealUD18Frames(unittest.TestCase):
+    def test_meter_a(self):
+        r = P.decode_report(UD18_A_FRAME)
+        self.assertEqual(r.device_type, "USB")
+        self.assertAlmostEqual(r.voltage, 4.91, places=2)
+        self.assertAlmostEqual(r.current, 0.04, places=2)
+        self.assertAlmostEqual(r.power, 0.196, places=3)
+        self.assertAlmostEqual(r.capacity_ah, 227.464, places=3)
+        self.assertAlmostEqual(r.energy_wh, 2023.99, places=2)
+        self.assertAlmostEqual(r.usb_dminus, 0.05, places=2)
+        self.assertAlmostEqual(r.usb_dplus, 0.18, places=2)
+        self.assertEqual(r.temperature_c, 0)
+        self.assertEqual(r.runtime_s, 795 * 3600 + 28 * 60 + 39)
+        self.assertTrue(r.checksum_ok)
+
+    def test_meter_b(self):
+        r = P.decode_report(UD18_B_FRAME)
+        self.assertEqual(r.device_type, "USB")
+        self.assertAlmostEqual(r.voltage, 4.91, places=2)
+        self.assertAlmostEqual(r.current, 0.07, places=2)
+        self.assertAlmostEqual(r.power, 0.344, places=3)
+        self.assertAlmostEqual(r.capacity_ah, 1.21, places=3)
+        self.assertAlmostEqual(r.energy_wh, 6.15, places=2)
+        self.assertAlmostEqual(r.usb_dminus, 0.05, places=2)
+        self.assertAlmostEqual(r.usb_dplus, 0.18, places=2)
+        self.assertEqual(r.temperature_c, 0)
+        self.assertEqual(r.runtime_s, 3 * 3600 + 47 * 60 + 50)
+        self.assertTrue(r.checksum_ok)
+
 
 class TestChecksum(unittest.TestCase):
     def test_report_checksum_ok(self):

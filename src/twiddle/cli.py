@@ -171,16 +171,28 @@ def cmd_reset(cfg, args) -> int:
     return 1
 
 
+def _record_advert(found: dict, device, adv) -> None:
+    """Remember a device that advertises service FFE0: address -> (rssi, name)."""
+    uuids = [u.lower() for u in (adv.service_uuids or [])]
+    if P.SERVICE_UUID in uuids:
+        found[device.address] = (adv.rssi, adv.local_name or None)
+
+
+def format_scan(found: dict, known: dict, duration: float) -> list[str]:
+    """The text lines of `twiddle scan`, strongest signal first."""
+    lines = [f"Devices advertising FFE0 (a common serial service, not only meters) "
+             f"seen in {duration:.0f}s:"]
+    for mac, (rssi, name) in sorted(found.items(), key=lambda x: -x[1][0]):
+        tag = f"<- {known[mac]}" if mac in known else "(unmapped)"
+        lines.append(f"  {mac}  rssi={rssi}  {name or '(no name)'}  {tag}")
+    return lines
+
+
 def cmd_scan(cfg, args) -> int:
     async def _scan():
         from bleak import BleakScanner
         found = {}
-
-        def cb(d, adv):
-            uuids = [u.lower() for u in (adv.service_uuids or [])]
-            if P.SERVICE_UUID in uuids:
-                found[d.address] = adv.rssi
-        async with BleakScanner(cb):
+        async with BleakScanner(lambda d, adv: _record_advert(found, d, adv)):
             await asyncio.sleep(args.duration)
         return found
     try:
@@ -189,13 +201,11 @@ def cmd_scan(cfg, args) -> int:
         print(f"error: {type(e).__name__}: {e}", file=sys.stderr); return 1
     known = {d.mac: n for n, d in cfg.devices.items()}
     if args.json:
-        print(json.dumps([{"mac": m, "rssi": r, "name": known.get(m)}
-                          for m, r in sorted(found.items(), key=lambda x: -x[1])], indent=2))
+        print(json.dumps([{"mac": m, "rssi": r, "advertised_name": n, "name": known.get(m)}
+                          for m, (r, n) in sorted(found.items(), key=lambda x: -x[1][0])],
+                         indent=2))
         return 0
-    print(f"ATORCH-class (FFE0) devices seen in {args.duration:.0f}s:")
-    for mac, rssi in sorted(found.items(), key=lambda x: -x[1]):
-        tag = f"  <- {known[mac]}" if mac in known else "  (unmapped)"
-        print(f"  {mac}  rssi={rssi}{tag}")
+    print("\n".join(format_scan(found, known, args.duration)))
     return 0
 
 
@@ -237,7 +247,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("-y", "--yes", action="store_true", help="skip confirmation")
     sp.add_argument("--json", action="store_true"); sp.set_defaults(func=cmd_reset)
 
-    sp = sub.add_parser("scan", help="scan for ATORCH-class (FFE0) devices")
+    sp = sub.add_parser("scan", help="scan for devices advertising service FFE0")
     sp.add_argument("--duration", type=float, default=8.0)
     sp.add_argument("--json", action="store_true"); sp.set_defaults(func=cmd_scan)
 
@@ -260,7 +270,7 @@ def main(argv=None) -> int:
     try:
         return args.func(cfg, args)
     except KeyError as e:
-        print(f"error: {e}", file=sys.stderr); return 2
+        print(f"error: {e.args[0]}", file=sys.stderr); return 2
     except SocketDenied as e:
         print(f"error: {e}", file=sys.stderr); return 1
     except BrokenPipeError:
