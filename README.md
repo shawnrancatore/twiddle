@@ -3,6 +3,7 @@
 **Read your ATORCH USB and DC power meters from one command, without fighting over their single Bluetooth connection.**
 
 <!-- bricoleur:intro -->
+> Part of **[bricoleur.ai](https://bricoleur.ai)**: small, honest tools cobbled together from the AI-era parts at hand. Related: **[keeBLEr](https://github.com/shawnrancatore/keeBLEr)**, another bench tool that speaks Bluetooth LE.
 <!-- /bricoleur:intro -->
 
 ```mermaid
@@ -290,4 +291,6 @@ From finding your meters to resetting counters, with the reasoning behind each l
 **[bricoleur.ai/projects/twiddle](https://bricoleur.ai/projects/twiddle)**.
 
 <!-- bricoleur:footer -->
+---
+Part of **[bricoleur.ai](https://bricoleur.ai)** · [Full guide](https://bricoleur.ai/projects/twiddle) · MIT © 2026 Shawn Rancatore
 <!-- /bricoleur:footer -->
