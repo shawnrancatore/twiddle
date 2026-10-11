@@ -86,7 +86,11 @@ class DeviceManager:
         # device type from the last frame whose checksum matched; a reset
         # uses this, never the type of a frame that may be corrupt
         self.device_type: str | None = None
+        # when the last report frame arrived; 0.0 until the first one. This,
+        # and not the time of the connect, is what `age_s` measures.
         self.last_frame_ts: float = 0.0
+        # when the current connection came up; only the stale watchdog uses it
+        self.connected_at: float = 0.0
         self.connect_count = 0
         self.fail_streak = 0
         self.last_error: str | None = None
@@ -140,11 +144,7 @@ class DeviceManager:
                     if not client.is_connected:
                         raise ConnectionError("connect returned not-connected")
                     await client.start_notify(P.CHAR_UUID, self._on_notify)
-                    self.connected = True
-                    self.connect_count += 1
-                    self.fail_streak = 0
-                    self.last_error = None
-                    self.last_frame_ts = time.time()  # grace before watchdog
+                    self._mark_connected()
                     log.info("%s: connected (%s)", self.name, self.mac)
                 # lock released; stream until disconnect/stale/stop
                 try:
@@ -159,14 +159,29 @@ class DeviceManager:
                 self.last_error = f"{type(e).__name__}: {e}"
                 log.debug("%s: session ended: %s", self.name, self.last_error)
             finally:
+                if self.connected and not self._stop:
+                    log.info("%s: disconnected", self.name)
                 self.connected = False
             if not self._stop:
                 await asyncio.sleep(self.ble.reconnect_delay)
 
+    def _mark_connected(self) -> None:
+        self.connected = True
+        self.connect_count += 1
+        self.fail_streak = 0
+        self.last_error = None
+        self.connected_at = time.time()  # grace period for the watchdog
+
+    def _stale(self) -> bool:
+        """No frame for `stale_timeout`, counted from the later of the last
+        frame and the connect (a new connection gets time to deliver one)."""
+        since = max(self.last_frame_ts, self.connected_at)
+        return time.time() - since > self.ble.stale_timeout
+
     async def _serve(self, client) -> None:
         """Inner loop while connected: pump commands + watchdog."""
         while client.is_connected and not self._disconnected.is_set() and not self._stop:
-            if time.time() - self.last_frame_ts > self.ble.stale_timeout:
+            if self._stale():
                 raise TimeoutError("stream went stale")
             try:
                 cmd = await asyncio.wait_for(self._cmd_q.get(), timeout=1.0)
@@ -226,6 +241,7 @@ class DeviceManager:
 
     async def reset(self, counter: str = "all") -> None:
         await self.send_command(reset_frame(self.device_type, counter))
+        log.info("%s: reset %s sent", self.name, counter)
 
     def stop(self) -> None:
         self._stop = True
