@@ -41,7 +41,7 @@ twiddle scan
 `twiddle scan` listens for 8 seconds and lists every device it hears advertising FFE0, with its
 advertised name and signal strength. FFE0 is a common serial service, so the list can include
 devices that are not meters. ATORCH meters advertise names such as `UD18_BLE`; other ATORCH models
-use other names. Add only the addresses of your meters to the config. `(unmapped)` means the
+may advertise other names. Add only the addresses of your meters to the config. `(unmapped)` means the
 address is not in your config yet:
 
 ```text
@@ -196,8 +196,9 @@ An AC meter reports `device_type` `AC`, and Twiddle reads its frame with the DC 
 layout is not documented for AC meters, and no AC meter has been tested.
 
 What has run on real hardware: two UD18 USB-type meters, on Linux with BlueZ. That covered scan,
-the service, reads, restarts, reconnecting after a dropped link, and every reset path (all four
-counters, through the CLI, the socket and the one-shot connection). DC and AC meters have been
+the service, reads, restarts, reconnecting after a dropped link, and the reset paths. Each of the
+four counters was reset once and each path was used at least once: `wh` and `all` through the CLI
+with the service, `duration` through the socket, and `ah` through the one-shot connection. DC and AC meters have been
 tested only with synthetic frames, and their reset commands have not been tried on a real meter.
 
 ## Resetting counters

@@ -73,8 +73,8 @@ connection and prints only `name`, `mac`, `note`, `connected` (always `true`)
 and `reading`. It has no `connect_count`, `fail_streak`, `last_error` or
 `age_s`, and the text form shows no age. `twiddle list --json` with no service
 prints each configured device with `mac`, `note`, `connected: false` and
-`reading: null` only. `twiddle list --json`
-prints `{"ok": true, "devices": {<name>: <status>, ...}}`.
+`reading: null` only. With the service running, `twiddle list --json` prints
+`{"ok": true, "devices": {<name>: <status>, ...}}`.
 
 ## Optional HTTP endpoint
 
@@ -131,7 +131,8 @@ note = "free text"
 Find MAC addresses with `twiddle scan --json`. It lists every device
 advertising FFE0, not only meters: each entry has `advertised_name` (`null`
 when the device sent none) to tell them apart, and `name` (`null` for a device
-not yet in the config). ATORCH meters advertise names such as `UD18_BLE`. Restart the service after editing.
+not yet in the config). ATORCH meters advertise names such as `UD18_BLE`.
+Restart the service after editing.
 
 ## Tests and development
 
