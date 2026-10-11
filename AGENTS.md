@@ -11,7 +11,7 @@ to parse the output.
 ```sh
 twiddle list --json                     # all meters and their latest readings
 twiddle get <name> --json               # one meter's status and reading
-twiddle scan --json                     # meters advertising service FFE0 nearby
+twiddle scan --json                     # devices advertising service FFE0 nearby (any device, with its name; not only meters)
 twiddle reset <name> --counter all -y   # clear counters (destructive, see below)
 twiddle config                          # effective config: source, socket, meters
 twiddle service                         # run the service in the foreground
@@ -46,7 +46,7 @@ that calls this tool: use the name and let the config resolve it.
 
 ## JSON shapes
 
-`twiddle get <name> --json` prints:
+With the service running, `twiddle get <name> --json` prints:
 
 ```json
 {
@@ -63,7 +63,17 @@ that calls this tool: use the name and let the config resolve it.
 ```
 
 `reading` is `null` until the first frame arrives. Check `connected` and
-`age_s` (seconds since the last frame) for freshness. `twiddle list --json`
+`age_s` for freshness: `age_s` is the time since the last frame was received
+(not since the connect), and `null` until the first frame of the service
+process. After a reconnect an old reading keeps its growing age until a new
+frame arrives.
+
+With no service running, `twiddle get <name> --json` makes a one-shot
+connection and prints only `name`, `mac`, `note`, `connected` (always `true`)
+and `reading`. It has no `connect_count`, `fail_streak`, `last_error` or
+`age_s`, and the text form shows no age. `twiddle list --json` with no service
+prints each configured device with `mac`, `note`, `connected: false` and
+`reading: null` only. `twiddle list --json`
 prints `{"ok": true, "devices": {<name>: <status>, ...}}`.
 
 ## Optional HTTP endpoint
@@ -118,8 +128,10 @@ mac  = "AA:BB:CC:DD:EE:03"
 note = "free text"
 ```
 
-Find MAC addresses with `twiddle scan --json`; meters not yet in the config
-show `"name": null`. Restart the service after editing.
+Find MAC addresses with `twiddle scan --json`. It lists every device
+advertising FFE0, not only meters: each entry has `advertised_name` (`null`
+when the device sent none) to tell them apart, and `name` (`null` for a device
+not yet in the config). ATORCH meters advertise names such as `UD18_BLE`. Restart the service after editing.
 
 ## Tests and development
 
@@ -138,7 +150,12 @@ reconnects on its own, so do not remove the retry or lock logic in `client.py`.
 
 - **One meter shows `OFFLINE` and `fail_streak` rises:** the service keeps
   retrying. If it persists, raise `[ble] connect_timeout` or lower
-  `clear_cache_after` in the config.
+  `clear_cache_after` in the config. `clear_cache_after` runs
+  `bluetoothctl remove <mac>`, which also deletes any pairing or trust stored
+  for that address.
+- **A meter drops soon after connecting:** seen in 2 of 12 service starts; it
+  reconnects by itself. After a forced drop, reconnecting took 6.6 s and 8.5 s.
+  Wait for a new frame rather than trusting `connected` alone.
 - **Every meter is offline:** check the adapter (`rfkill list`), that the user
   is in the `bluetooth` group, and that no phone app holds the meters (each
   takes one connection at a time).

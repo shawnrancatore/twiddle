@@ -38,13 +38,16 @@ pip install -e .
 twiddle scan
 ```
 
-`twiddle scan` listens for 8 seconds and lists the meters it hears advertising FFE0, the
-Bluetooth service these meters use. `(unmapped)` means the address is not in your config yet:
+`twiddle scan` listens for 8 seconds and lists every device it hears advertising FFE0, with its
+advertised name and signal strength. FFE0 is a common serial service, so the list can include
+devices that are not meters. ATORCH meters advertise names such as `UD18_BLE`; other ATORCH models
+use other names. Add only the addresses of your meters to the config. `(unmapped)` means the
+address is not in your config yet:
 
 ```text
-ATORCH-class (FFE0) devices seen in 8s:
-  AA:BB:CC:DD:EE:01  rssi=-58  (unmapped)
-  AA:BB:CC:DD:EE:02  rssi=-71  (unmapped)
+Devices advertising FFE0 (a common serial service, not only meters) seen in 8s:
+  AA:BB:CC:DD:EE:01  rssi=-58  UD18_BLE  (unmapped)
+  AA:BB:CC:DD:EE:02  rssi=-71  (no name)  (unmapped)
 ```
 
 Copy the example config:
@@ -72,14 +75,16 @@ twiddle list
 ```text
 meter-a  AA:BB:CC:DD:EE:01  online  (USB load test)  [0.8s ago]
     USB  V=5.08V  I=0.52A  P=2.642W
-    cap=1.234Ah  energy=6.27Wh  runtime=2h03m04s  temp=27C
+    cap=1.234Ah  energy=6.27Wh  runtime=2h03m04s  temp=0C
 meter-b  AA:BB:CC:DD:EE:02  online  (DC supply)  [0.6s ago]
     DC  V=12.3V  I=1.234A  P=15.1W
     energy=45.67Wh  runtime=0h41m10s  temp=31C
 ```
 
 **How to tell it worked:** each meter's first line says `online`, followed by a small age such as
-`[0.8s ago]`, the time since its last report.
+`[0.8s ago]`, the time since the last report frame arrived. It does not restart when a
+connection comes back: after a reconnect an old reading shows an old age until a new frame
+arrives, and a meter that has sent no frame yet shows no age.
 
 A meter shown as `OFFLINE` with `last_error: TimeoutError: not advertising` was not found. Check
 that it is on, in range, and not connected to something else, such as the phone app. The service
@@ -94,7 +99,8 @@ the report frame (a 36-byte packet) that each meter sends about once a second, a
 latest.
 
 When a connection fails or goes quiet, the service reconnects. By default, after every 6 failures
-in a row it clears BlueZ's cached state for that meter with `bluetoothctl remove`.
+in a row it clears BlueZ's cached state for that meter by running `bluetoothctl remove <mac>`,
+which also deletes any pairing or trust the host holds for that address. The meters need neither.
 
 The `twiddle` command asks the service over its socket. With no service running, `get` and
 `reset` connect to the meter directly, once. The frame layout and the reset commands are in
@@ -120,6 +126,14 @@ The `twiddle` command asks the service over its socket. With no service running,
   requests whose `Host` is not `127.0.0.1` or `localhost`, so a web page cannot get round this by
   pointing its own host name at 127.0.0.1.
 
+## Known limits
+
+- A meter sometimes drops within seconds of connecting and then reconnects by itself. This was
+  seen in 2 of 12 service starts. A script that reads right after `connected` appears should wait
+  for a new frame.
+- Reconnecting after a dropped link takes a few seconds. After a forced drop it took 6.6 s and
+  8.5 s.
+
 ## Commands
 
 | Command | What it does |
@@ -128,7 +142,7 @@ The `twiddle` command asks the service over its socket. With no service running,
 | `twiddle get <name>` | one meter; with no service running, connects to it directly once |
 | `twiddle watch <name>` | `get` every second (`--interval` to change) until Ctrl-C |
 | `twiddle reset <name>` | clear counters; `--counter` is `all` (default), `wh`, `ah` or `duration`; `-y` skips the question |
-| `twiddle scan` | list meters advertising FFE0 (`--duration`, default 8 seconds) |
+| `twiddle scan` | list devices advertising FFE0, with their names (`--duration`, default 8 seconds) |
 | `twiddle service` | run the service in the foreground |
 | `twiddle config` | print the effective configuration as JSON |
 
@@ -152,7 +166,7 @@ and has no meters. [config.example.toml](config.example.toml) lists every settin
 | `[ble] reconnect_delay` | `2.0` | seconds between reconnect attempts |
 | `[ble] stale_timeout` | `12.0` | reconnect after this many seconds without a frame |
 | `[ble] command_timeout` | `8.0` | seconds the service waits for a reset to be written |
-| `[ble] clear_cache_after` | `6` | run `bluetoothctl remove <mac>` after every N failures; `0` never |
+| `[ble] clear_cache_after` | `6` | run `bluetoothctl remove <mac>` after every N failures; `0` never. This also deletes any pairing or trust stored for that address |
 | `[devices.<name>] mac` | | the meter's address, from `twiddle scan` |
 | `[devices.<name>] note` | | free text that `list` shows |
 
@@ -175,10 +189,16 @@ frame does not carry the field.
 | `checksum_ok` | frame checksum matched | bool | yes | yes |
 | `raw` | the whole frame, as hex | | yes | yes |
 
+The two ATORCH UD18 meters (USB type) on the bench send 0 in the temperature field, so
+`temperature_c` is 0 there and is not a real temperature.
+
 An AC meter reports `device_type` `AC`, and Twiddle reads its frame with the DC layout. That
-layout is not documented for AC meters, and no AC meter has been tested. DC, like AC, has been
-tested only with synthetic frames, not a real meter, and the DC and AC reset commands have not
-been tried on hardware.
+layout is not documented for AC meters, and no AC meter has been tested.
+
+What has run on real hardware: two UD18 USB-type meters, on Linux with BlueZ. That covered scan,
+the service, reads, restarts, reconnecting after a dropped link, and every reset path (all four
+counters, through the CLI, the socket and the one-shot connection). DC and AC meters have been
+tested only with synthetic frames, and their reset commands have not been tried on a real meter.
 
 ## Resetting counters
 
@@ -275,7 +295,7 @@ pip install -e '.[test]'
 python -m pytest
 ```
 
-The tests need no meter and no Bluetooth. They check the codec against a real captured USB frame
+The tests need no meter and no Bluetooth. They check the codec against real USB frames
 and synthetic DC frames, both reset paths, the socket and HTTP handlers, and the CLI's reset. They
 do not cover a real meter or BlueZ.
 

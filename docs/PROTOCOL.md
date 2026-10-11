@@ -85,7 +85,9 @@ not listed above, it sends nothing.
 A real captured USB frame
 `ff5501030003040000520015c000000ceb010c010e000000082d3b3c00000000000000b5`
 decodes to **7.72 V, 0.82 A, 5.568 A·h, 33.07 W·h, D−/D+ 2.68/2.70 V,
-runtime 8h45m59s**, checksum `0xB5` ✓. See `tests/test_protocol.py`.
+runtime 8h45m59s**, checksum `0xB5` ✓. See `tests/test_protocol.py`, which also
+holds one frame from each of two ATORCH UD18 meters (USB type). Both send `00 00`
+in the temperature bytes, so `temperature_c` reads 0 on those meters.
 
 ## References
 
